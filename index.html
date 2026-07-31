@@ -553,9 +553,10 @@
               </div>
             </div>
             <div style="margin-top:16px;padding:12px;background:var(--surface2);border-radius:8px;font-size:0.85rem;color:var(--text-muted)">
-              <strong>Metodología:</strong> Backtest con datos Dukascopy (515 días) y validación cruzada con QQQ vía Alpaca (501 días). 
-              Overnight box: tendencia desde cierre anterior. IB box: tendencia después de la primera hora de sesión. 
+              <strong>Metodología:</strong> Backtest con datos Dukascopy (515 días) y validación cruzada con QQQ vía Alpaca (501 días).
+              Overnight box: tendencia desde cierre anterior. IB box: tendencia después de la primera hora de sesión.
               Sweep + Confirmación: se define si el sweep del IB fue seguido por confirmación o rechazo.
+              <br><em>Valores de referencia — el cron de box-capture (21:15 UTC) actualizará estos datos dinámicamente tras ~30 días hábiles de acumular historial.</em>
             </div>
           </div>
         </div>
@@ -563,8 +564,9 @@
 
       <!-- FOOTER -->
       <div class="footer">
-        Datos de Yahoo Finance, NewsAPI, Infobae RSS, El Cronista RSS. Análisis IA: Groq (Llama 3.3).<br>
-        Actualización automática: lunes a viernes 8:00 hs Argentina. Sesgo recalculado al cargar la página.
+        Datos de Yahoo Finance, RSS (Infobae, Cronista, La Nación, Perfil, MarketWatch, CNBC, Yahoo Finance, Investing.com). Análisis IA: Groq (Llama 3.3).<br>
+        Refresh frontend: cada 5 min. Crons Vercel: bias a las 8:00 AR, caja a las 21:15 AR (lun–vie).<br>
+        <span id="lastUpdated" style="color:var(--accent)">--:--:--</span>
       </div>
 
     </div>
@@ -586,27 +588,30 @@
     updateClock();
 
     // Phase detection
-    function getArDateTime() {
+    function getArWeekday() {
       const now = new Date();
-      const parts = new Intl.DateTimeFormat('en-CA', {
+      const offset = now.getTimezoneOffset() + 180; // UTC-3 for Argentina
+      const arTime = new Date(now.getTime() + offset * 60000);
+      return arTime.getDay();
+    }
+
+    function getArMins() {
+      const now = new Date();
+      const parts = new Intl.DateTimeFormat('en', {
         timeZone: 'America/Argentina/Buenos_Aires',
-        hour: '2-digit', minute: '2-digit', hour12: false
+        hour: 'numeric', minute: 'numeric', hour12: false
       }).formatToParts(now);
       let hour = 0, minute = 0;
       for (const p of parts) {
         if (p.type === 'hour') hour = parseInt(p.value, 10);
         else if (p.type === 'minute') minute = parseInt(p.value, 10);
       }
-      const dateParts = new Intl.DateTimeFormat('en', {
-        timeZone: 'America/Argentina/Buenos_Aires',
-        year: 'numeric', month: 'numeric', day: 'numeric'
-      }).format(now).split('/');
-      const weekday = new Date(parseInt(dateParts[2]), parseInt(dateParts[0]) - 1, parseInt(dateParts[1])).getDay();
-      return { hour, minute, weekday, mins: hour * 60 + minute };
+      return hour * 60 + minute;
     }
 
     function getPhase() {
-      const { weekday, mins } = getArDateTime();
+      const weekday = getArWeekday();
+      const mins = getArMins();
       if (weekday === 6 || weekday === 7) return { label: 'FIN DE SEMANA', cls: 'phase-weekend' };
       if (mins < 600) return { label: 'PRE-MARKET', cls: 'phase-premarket' };
       if (mins < 690) return { label: 'PRE-MARKET (apertura 11:30)', cls: 'phase-premarket' };
@@ -631,9 +636,11 @@
       document.getElementById('boxBody').classList.toggle('open');
     });
 
-    // Score color
+    // Score color — matches bias.js thresholds
     function scoreColor(score) {
+      if (score > 60) return 'var(--green)';
       if (score > 20) return 'var(--green)';
+      if (score < -60) return 'var(--red)';
       if (score < -20) return 'var(--red)';
       return 'var(--yellow)';
     }
@@ -692,12 +699,18 @@
         { label: 'Fear & Greed', price: market.fearGreed?.value, change: null, label2: market.fearGreed?.label }
       ];
 
-      grid.innerHTML = items.map(i => `
+      grid.innerHTML = items.map(i => {
+        const dec = i.label === 'VIX' || i.label === 'Fear & Greed' ? 0 :
+                    i.label === 'DXY (Dólar)' ? 2 :
+                    i.label === 'USD/JPY' ? 3 :
+                    i.label === 'Crudo WTI' ? 2 : 2;
+        return `
         <div class="metric">
           <div class="metric-label">${i.label}</div>
-          <div class="metric-value">${i.price != null ? formatNum(i.price, i.price > 1000 ? 0 : 2) : '--'}</div>
+          <div class="metric-value">${i.price != null ? formatNum(i.price, dec) : '--'}</div>
           <div class="metric-change ${changeColor(i.change)}">${i.change != null ? formatPct(i.change) : (i.label2 || '')}</div>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     }
 
     // Render correlations
@@ -758,11 +771,14 @@
         const s = n.score || 0;
         const bg = s > 20 ? 'var(--green-bg)' : s < -20 ? 'var(--red-bg)' : 'var(--yellow-bg)';
         const col = s > 20 ? 'var(--green)' : s < -20 ? 'var(--red)' : 'var(--yellow)';
+        const langBadge = n.lang === 'en'
+          ? '<span style="background:rgba(88,166,255,0.2);color:var(--blue);padding:1px 6px;border-radius:4px;font-size:0.65rem;margin-left:6px">EN</span>'
+          : '<span style="background:rgba(210,153,34,0.2);color:var(--yellow);padding:1px 6px;border-radius:4px;font-size:0.65rem;margin-left:6px">ES</span>';
         return `
           <div class="news-item">
             <div class="news-score" style="background:${bg};color:${col}">${s > 0 ? '+' : ''}${s}</div>
             <div class="news-text">
-              <div class="news-title">${n.title}</div>
+              <div class="news-title">${n.title}${langBadge}</div>
               ${n.reason ? `<div class="news-reason">${n.reason}</div>` : ''}
             </div>
           </div>`;
@@ -900,14 +916,18 @@
 
         document.getElementById('loadingState').style.display = 'none';
         document.getElementById('mainContent').style.display = 'block';
+        document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+        });
 
-        renderBias(data.bias);
-        renderMetrics(data.market);
-        renderCorrelations(data.correlations);
-        renderNews(data.news?.analysis || {}, data.news?.sources);
-        renderHistory(data.biasHistory);
-        renderCorrChart(data.correlations);
-        renderAlerts(data.alerts);
+        try { renderBias(data.bias); } catch(e) { console.warn('bias render error:', e); }
+        try { renderMetrics(data.market); } catch(e) { console.warn('metrics render error:', e); }
+        try { renderCorrelations(data.correlations); } catch(e) { console.warn('correlations render error:', e); }
+        try { renderNews(data.news?.analysis || {}, data.news?.sources); } catch(e) { console.warn('news render error:', e); }
+        try { renderHistory(data.biasHistory); } catch(e) { console.warn('history render error:', e); }
+        try { renderCorrChart(data.correlations); } catch(e) { console.warn('chart render error:', e); }
+        try { renderAlerts(data.alerts); } catch(e) { console.warn('alerts render error:', e); }
 
       } catch (err) {
         document.getElementById('loadingState').innerHTML = `
