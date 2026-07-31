@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.local
+.vercel/
+__pycache__/
+*.pyc
+data_raw/
+data_raw_test/
+*.py
+requirements.txt
+reporte_backtest.json
+README.md
+.vercel

@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Premarket Briefing - Nasdaq</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --green: #3fb950;
+      --green-bg: rgba(63,185,80,0.15);
+      --red: #f85149;
+      --red-bg: rgba(248,81,73,0.15);
+      --yellow: #d29922;
+      --yellow-bg: rgba(210,153,34,0.15);
+      --blue: #58a6ff;
+      --purple: #bc8cff;
+      --accent: #58a6ff;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      line-height: 1.5;
+      padding: 16px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .header h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .clock {
+      font-size: 1.1rem;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-muted);
+    }
+
+    .phase-badge {
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .phase-premarket { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
+    .phase-open { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); }
+    .phase-closed { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+    .phase-weekend { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); }
+
+    .alert-box {
+      padding: 14px 20px;
+      border-radius: 10px;
+      margin-bottom: 16px;
+      font-weight: 500;
+      display: none;
+    }
+
+    .alert-box.alta { background: var(--red-bg); border: 1px solid var(--red); color: var(--red); }
+    .alert-box.media { background: var(--yellow-bg); border: 1px solid var(--yellow); color: var(--yellow); }
+    .alert-box.info { background: rgba(88,166,255,0.1); border: 1px solid var(--blue); color: var(--blue); }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .bias-section {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .bias-score {
+      font-size: 3.5rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .bias-label {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    .bias-factors {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .factor-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.85rem;
+    }
+
+    .factor-name {
+      width: 120px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .factor-bar-bg {
+      flex: 1;
+      height: 8px;
+      background: var(--surface2);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .factor-bar {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+
+    .factor-value {
+      width: 50px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      background: var(--surface2);
+      padding: 14px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .metric-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .metric-value {
+      font-size: 1.3rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-change {
+      font-size: 0.8rem;
+      margin-top: 2px;
+    }
+
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    .neutral { color: var(--text-muted); }
+
+    .corr-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .corr-table th, .corr-table td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .corr-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .corr-table tr:hover { background: var(--surface2); }
+
+    .r-bar {
+      display: inline-block;
+      width: 80px;
+      height: 6px;
+      border-radius: 3px;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    .coint-badge {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .coint-yes { background: var(--green-bg); color: var(--green); }
+    .coint-no { background: var(--surface2); color: var(--text-muted); }
+
+    .news-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .news-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px;
+      background: var(--surface2);
+      border-radius: 8px;
+    }
+
+    .news-score {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    .news-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .news-title {
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+
+    .news-source {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .news-reason {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      font-style: italic;
+    }
+
+    .chart-container {
+      height: 200px;
+      position: relative;
+    }
+
+    .history-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 100px;
+      padding-top: 10px;
+    }
+
+    .history-bar {
+      flex: 1;
+      min-width: 8px;
+      max-width: 30px;
+      border-radius: 3px 3px 0 0;
+      position: relative;
+      cursor: default;
+      transition: opacity 0.2s;
+    }
+
+    .history-bar:hover { opacity: 0.8; }
+
+    .history-bar-label {
+      position: absolute;
+      bottom: -20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .history-bar-tooltip {
+      position: absolute;
+      top: -30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      white-space: nowrap;
+      display: none;
+    }
+
+    .history-bar:hover .history-bar-tooltip { display: block; }
+
+    .collapsible-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .collapsible-header::after {
+      content: '▼';
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      transition: transform 0.2s;
+    }
+
+    .collapsible-header.open::after { transform: rotate(180deg); }
+
+    .collapsible-body {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+
+    .collapsible-body.open {
+      max-height: 2000px;
+    }
+
+    .tab-row {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+
+    .tab-btn {
+      padding: 6px 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+    }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-msg {
+      padding: 12px 16px;
+      background: var(--red-bg);
+      border: 1px solid var(--red);
+      border-radius: 8px;
+      color: var(--red);
+      font-size: 0.9rem;
+    }
+
+    .footer {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 768px) {
+      .two-col { grid-template-columns: 1fr; }
+      .bias-section { grid-template-columns: 1fr; }
+      .bias-score { text-align: center; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="header">
+      <h1>Premarket Briefing — Nasdaq (USTEC)</h1>
+      <div class="header-right">
+        <span class="clock" id="clock">--:--:--</span>
+        <span class="phase-badge phase-weekend" id="phase">Cargando...</span>
+      </div>
+    </div>
+
+    <div class="alert-box" id="alertBox"></div>
+
+    <div id="loadingState" class="loading">
+      <div class="loading-spinner"></div>
+      <p style="margin-top:12px">Obteniendo datos de mercado...</p>
+    </div>
+
+    <div id="mainContent" style="display:none">
+
+      <!-- BIAS -->
+      <div class="card" id="biasCard">
+        <div class="card-title">Sesgo del día</div>
+        <div class="bias-section">
+          <div style="text-align:center">
+            <div class="bias-score" id="biasScore">--</div>
+            <div class="bias-label" id="biasLabel">--</div>
+          </div>
+          <div class="bias-factors" id="biasFactors"></div>
+        </div>
+      </div>
+
+      <!-- INDICADORES EN TIEMPO REAL -->
+      <div class="card">
+        <div class="card-title">Indicadores en tiempo real</div>
+        <div class="metrics-grid" id="metricsGrid"></div>
+      </div>
+
+      <!-- CORRELACIONES + NOTICIAS -->
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">Correlaciones con Nasdaq</div>
+          <div id="corrTableContainer"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Noticias analizadas por IA</div>
+          <div class="news-list" id="newsList"></div>
+        </div>
+      </div>
+
+      <!-- HISTORIAL DE SESGOS -->
+      <div class="card">
+        <div class="card-title">Historial de sesgos del mes</div>
+        <div class="history-bars" id="historyBars"></div>
+        <div style="height:24px"></div>
+      </div>
+
+      <!-- GRÁFICO DE CORRELACIONES ROLLING -->
+      <div class="card">
+        <div class="card-title">Evolución de correlaciones (rolling 60 días)</div>
+        <div class="tab-row" id="corrTabs"></div>
+        <div class="chart-container">
+          <canvas id="corrChart"></canvas>
+        </div>
+      </div>
+
+      <!-- ANÁLISIS DE CAJAS (BACKTEST) -->
+      <div class="card">
+        <div class="collapsible-header" id="boxHeader">
+          <div class="card-title" style="margin:0">Análisis de cajas (backtest, referencia)</div>
+        </div>
+        <div class="collapsible-body" id="boxBody">
+          <div style="margin-top:16px">
+            <div class="card-title">Resultados del backtest (515 días)</div>
+            <div class="metrics-grid">
+              <div class="metric">
+                <div class="metric-label">Caja overnight (alcista)</div>
+                <div class="metric-value positive">56.7%</div>
+                <div class="metric-change neutral">+0.67% promedio</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Caja overnight (bajista)</div>
+                <div class="metric-value negative">49.6%</div>
+                <div class="metric-change neutral">Moneda al aire</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">IB box (alcista)</div>
+                <div class="metric-value positive">55.1%</div>
+                <div class="metric-change neutral">Confirma tendencia</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">IB box (bajista)</div>
+                <div class="metric-value negative">44.9%</div>
+                <div class="metric-change neutral">Menos confiable</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Sweep + IB confirma</div>
+                <div class="metric-value positive">75.2%</div>
+                <div class="metric-change neutral">294 días de datos</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Sweep + IB rechaza</div>
+                <div class="metric-value" style="color:var(--yellow)">22.1%</div>
+                <div class="metric-change neutral">199 días de datos</div>
+              </div>
+            </div>
+            <div style="margin-top:16px;padding:12px;background:var(--surface2);border-radius:8px;font-size:0.85rem;color:var(--text-muted)">
+              <strong>Metodología:</strong> Backtest con datos Dukascopy (515 días) y validación cruzada con QQQ vía Alpaca (501 días). 
+              Overnight box: tendencia desde cierre anterior. IB box: tendencia después de la primera hora de sesión. 
+              Sweep + Confirmación: se define si el sweep del IB fue seguido por confirmación o rechazo.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FOOTER -->
+      <div class="footer">
+        Datos de Yahoo Finance, NewsAPI, Infobae RSS, El Cronista RSS. Análisis IA: Groq (Llama 3.3).<br>
+        Actualización automática: lunes a viernes 8:00 hs Argentina. Sesgo recalculado al cargar la página.
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin;
+
+    // Clock
+    function updateClock() {
+      const now = new Date();
+      const arTime = new Intl.DateTimeFormat('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+      }).format(now);
+      document.getElementById('clock').textContent = arTime;
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // Phase detection
+    function getArDateTime() {
+      const now = new Date();
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        hour: '2-digit', minute: '2-digit', hour12: false
+      }).formatToParts(now);
+      let hour = 0, minute = 0;
+      for (const p of parts) {
+        if (p.type === 'hour') hour = parseInt(p.value, 10);
+        else if (p.type === 'minute') minute = parseInt(p.value, 10);
+      }
+      const dateParts = new Intl.DateTimeFormat('en', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        year: 'numeric', month: 'numeric', day: 'numeric'
+      }).format(now).split('/');
+      const weekday = new Date(parseInt(dateParts[2]), parseInt(dateParts[0]) - 1, parseInt(dateParts[1])).getDay();
+      return { hour, minute, weekday, mins: hour * 60 + minute };
+    }
+
+    function getPhase() {
+      const { weekday, mins } = getArDateTime();
+      if (weekday === 6 || weekday === 7) return { label: 'FIN DE SEMANA', cls: 'phase-weekend' };
+      if (mins < 600) return { label: 'PRE-MARKET', cls: 'phase-premarket' };
+      if (mins < 690) return { label: 'PRE-MARKET (apertura 11:30)', cls: 'phase-premarket' };
+      if (mins < 720) return { label: 'MERCADO ABIERTO', cls: 'phase-open' };
+      if (mins < 960) return { label: 'SESIÓN REGULAR', cls: 'phase-open' };
+      if (mins < 1020) return { label: 'CIERRE PRÓXIMO', cls: 'phase-premarket' };
+      return { label: 'MERCADO CERRADO', cls: 'phase-closed' };
+    }
+
+    function setPhase() {
+      const p = getPhase();
+      const el = document.getElementById('phase');
+      el.textContent = p.label;
+      el.className = 'phase-badge ' + p.cls;
+    }
+    setInterval(setPhase, 30000);
+    setPhase();
+
+    // Collapsible
+    document.getElementById('boxHeader').addEventListener('click', function() {
+      this.classList.toggle('open');
+      document.getElementById('boxBody').classList.toggle('open');
+    });
+
+    // Score color
+    function scoreColor(score) {
+      if (score > 20) return 'var(--green)';
+      if (score < -20) return 'var(--red)';
+      return 'var(--yellow)';
+    }
+
+    function changeColor(v) {
+      if (v > 0) return 'positive';
+      if (v < 0) return 'negative';
+      return 'neutral';
+    }
+
+    function formatPct(v) {
+      if (v == null) return '--';
+      return (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+    }
+
+    function formatNum(v, dec) {
+      if (v == null) return '--';
+      return v.toFixed(dec || 2);
+    }
+
+    // Render bias
+    function renderBias(bias) {
+      const scoreEl = document.getElementById('biasScore');
+      scoreEl.textContent = bias.score;
+      scoreEl.style.color = scoreColor(bias.score);
+      document.getElementById('biasLabel').textContent = `${bias.emoji} ${bias.label}`;
+
+      const factorsEl = document.getElementById('biasFactors');
+      factorsEl.innerHTML = '';
+      for (const f of bias.factors) {
+        const pct = ((f.score + 100) / 200) * 100;
+        const barColor = f.score > 0 ? 'var(--green)' : f.score < 0 ? 'var(--red)' : 'var(--text-muted)';
+        factorsEl.innerHTML += `
+          <div class="factor-row">
+            <span class="factor-name">${f.name}</span>
+            <div class="factor-bar-bg">
+              <div class="factor-bar" style="width:${pct}%;background:${barColor}"></div>
+            </div>
+            <span class="factor-value" style="color:${barColor}">${f.score > 0 ? '+' : ''}${f.score}</span>
+          </div>`;
+      }
+    }
+
+    // Render metrics
+    function renderMetrics(market) {
+      const grid = document.getElementById('metricsGrid');
+      const items = [
+        { label: 'Nikkei 225', price: market.nikkei?.price, change: market.nikkei?.change },
+        { label: 'KOSPI', price: market.kospi?.price, change: market.kospi?.change },
+        { label: 'Nasdaq 100', price: market.nasdaq?.price, change: market.nasdaq?.change },
+        { label: 'S&P 500', price: market.sp500?.price, change: market.sp500?.change },
+        { label: 'VIX', price: market.vix?.price, change: null },
+        { label: 'DXY (Dólar)', price: market.dxy?.price, change: null },
+        { label: 'USD/JPY', price: market.usdjpy?.price, change: market.usdjpy?.change },
+        { label: 'Crudo WTI', price: market.wti?.price, change: null },
+        { label: 'Fear & Greed', price: market.fearGreed?.value, change: null, label2: market.fearGreed?.label }
+      ];
+
+      grid.innerHTML = items.map(i => `
+        <div class="metric">
+          <div class="metric-label">${i.label}</div>
+          <div class="metric-value">${i.price != null ? formatNum(i.price, i.price > 1000 ? 0 : 2) : '--'}</div>
+          <div class="metric-change ${changeColor(i.change)}">${i.change != null ? formatPct(i.change) : (i.label2 || '')}</div>
+        </div>`).join('');
+    }
+
+    // Render correlations
+    function renderCorrelations(correlations) {
+      const container = document.getElementById('corrTableContainer');
+      const pairs = Object.entries(correlations).filter(([, v]) => !v.error);
+
+      if (pairs.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem">Sin datos de correlación disponibles</div>';
+        return;
+      }
+
+      let html = '<table class="corr-table"><thead><tr><th>Par</th><th>R</th><th>R²</th><th>p-value</th><th>Cointegrado</th></tr></thead><tbody>';
+      for (const [key, c] of pairs) {
+        const rAbs = Math.abs(c.r);
+        const rColor = c.r > 0 ? 'var(--green)' : c.r < 0 ? 'var(--red)' : 'var(--text-muted)';
+        const barW = rAbs * 100;
+        const cointCls = c.cointegration?.isCointegrated ? 'coint-yes' : 'coint-no';
+        const cointText = c.cointegration?.isCointegrated ? 'Sí' : 'No';
+        const sigText = c.significant ? '' : ' *';
+        html += `<tr>
+          <td>${c.label}</td>
+          <td><span class="r-bar" style="width:${barW}px;background:${rColor}"></span>${c.r > 0 ? '+' : ''}${c.r.toFixed(3)}</td>
+          <td>${c.rSquared.toFixed(3)}</td>
+          <td>${c.pValue.toFixed(4)}${sigText}</td>
+          <td><span class="coint-badge ${cointCls}">${cointText}</span></td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      html += '<div style="margin-top:8px;font-size:0.7rem;color:var(--text-muted)">* p-value > 0.05 (no significativo estadísticamente)</div>';
+      container.innerHTML = html;
+    }
+
+    // Render news
+    function renderNews(news, sources) {
+      const list = document.getElementById('newsList');
+      if (!news.individual || news.individual.length === 0) {
+        list.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem">Sin noticias disponibles</div>';
+        return;
+      }
+
+      const overall = news.overall_score || 0;
+      const oBg = overall > 20 ? 'var(--green-bg)' : overall < -20 ? 'var(--red-bg)' : 'var(--yellow-bg)';
+      const oCol = overall > 20 ? 'var(--green)' : overall < -20 ? 'var(--red)' : 'var(--yellow)';
+      const confText = { alta: 'Alta confianza', media: 'Confianza media', baja: 'Confianza baja' }[news.confidence] || 'Confianza baja';
+
+      list.innerHTML = `
+        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:${oBg};border:1px solid ${oCol};border-radius:8px;margin-bottom:10px">
+          <div style="font-size:2rem;font-weight:800;color:${oCol}">${overall > 0 ? '+' : ''}${overall}</div>
+          <div style="flex:1">
+            <div style="font-weight:600">Sentimiento general de la IA</div>
+            <div style="font-size:0.75rem;color:var(--text-muted)">${sources ? `${sources.total} noticias analizadas (${sources.english} EN / ${sources.spanish} ES)` : ''} · ${confText}</div>
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-muted);text-align:right">Peso en sesgo: <strong style="color:var(--text)">13%</strong></div>
+        </div>`;
+
+      list.innerHTML += news.individual.map(n => {
+        const s = n.score || 0;
+        const bg = s > 20 ? 'var(--green-bg)' : s < -20 ? 'var(--red-bg)' : 'var(--yellow-bg)';
+        const col = s > 20 ? 'var(--green)' : s < -20 ? 'var(--red)' : 'var(--yellow)';
+        return `
+          <div class="news-item">
+            <div class="news-score" style="background:${bg};color:${col}">${s > 0 ? '+' : ''}${s}</div>
+            <div class="news-text">
+              <div class="news-title">${n.title}</div>
+              ${n.reason ? `<div class="news-reason">${n.reason}</div>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+
+      if (news.key_factor) {
+        list.innerHTML += `
+          <div style="margin-top:8px;padding:10px;background:var(--surface2);border-radius:8px;font-size:0.85rem">
+            <strong>Factor clave:</strong> ${news.key_factor}
+          </div>`;
+      }
+    }
+
+    // Render history
+    function renderHistory(history) {
+      const container = document.getElementById('historyBars');
+      if (!history || history.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;width:100%;text-align:center">Sin historial este mes</div>';
+        return;
+      }
+
+      container.innerHTML = history.map(h => {
+        const pct = ((h.score + 100) / 200) * 100;
+        const col = h.score > 0 ? 'var(--green)' : h.score < 0 ? 'var(--red)' : 'var(--yellow)';
+        const day = h.date.split('-')[2];
+        return `
+          <div class="history-bar" style="height:${Math.max(4, pct)}%;background:${col}">
+            <div class="history-bar-tooltip">${h.date}: ${h.score} (${h.label})</div>
+          </div>`;
+      }).join('');
+    }
+
+    // Render chart
+    let corrChart = null;
+    let corrPairs = []; // store filtered pairs for tab sync
+    function renderCorrChart(correlations) {
+      const tabs = document.getElementById('corrTabs');
+      const allPairs = Object.entries(correlations)
+        .filter(([, v]) => v.rollingHistory && v.rollingHistory.length > 0);
+
+      if (allPairs.length === 0) {
+        tabs.innerHTML = '';
+        return;
+      }
+
+      corrPairs = allPairs.slice(0, 6); // max 6 tabs
+      const colors = ['#58a6ff', '#3fb950', '#f85149', '#d29922', '#bc8cff', '#f0883e'];
+      tabs.innerHTML = corrPairs.map(([, c], i) => `
+        <button class="tab-btn ${i === 0 ? 'active' : ''}" data-index="${i}">${c.label}</button>
+      `).join('');
+
+      const ctx = document.getElementById('corrChart').getContext('2d');
+
+      function drawChart(idx) {
+        const pair = corrPairs[idx];
+        if (!pair) return;
+        const c = pair[1];
+        const data = c.rollingHistory;
+
+        if (corrChart) corrChart.destroy();
+        corrChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: data.map((_, i) => i),
+            datasets: [{
+              label: c.label,
+              data: data,
+              borderColor: colors[idx % colors.length],
+              backgroundColor: 'transparent',
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.3
+            }, {
+              label: 'Referencia 0',
+              data: data.map(() => 0),
+              borderColor: 'rgba(139,148,158,0.3)',
+              borderWidth: 1,
+              borderDash: [4, 4],
+              pointRadius: 0
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => `${c.label}: ${ctx.parsed.y.toFixed(3)}`
+                }
+              }
+            },
+            scales: {
+              x: { display: false },
+              y: {
+                min: -1, max: 1,
+                grid: { color: 'rgba(48,54,61,0.5)' },
+                ticks: { color: '#8b949e', font: { size: 11 } }
+              }
+            }
+          }
+        });
+      }
+
+      if (corrPairs.length > 0) drawChart(0);
+
+      tabs.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          tabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          drawChart(parseInt(btn.dataset.index, 10));
+        });
+      });
+    }
+
+    // Alerts
+    function renderAlerts(alerts) {
+      const box = document.getElementById('alertBox');
+      if (!alerts || alerts.length === 0) {
+        box.style.display = 'none';
+        return;
+      }
+      const top = alerts[0];
+      box.textContent = `ALERTA: ${top.message}`;
+      box.className = 'alert-box ' + top.severity;
+      box.style.display = 'block';
+    }
+
+    // Main fetch
+    async function fetchData() {
+      try {
+        const res = await fetch(`${API_BASE}/api/bias`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('mainContent').style.display = 'block';
+
+        renderBias(data.bias);
+        renderMetrics(data.market);
+        renderCorrelations(data.correlations);
+        renderNews(data.news?.analysis || {}, data.news?.sources);
+        renderHistory(data.biasHistory);
+        renderCorrChart(data.correlations);
+        renderAlerts(data.alerts);
+
+      } catch (err) {
+        document.getElementById('loadingState').innerHTML = `
+          <div class="error-msg">
+            Error al obtener datos: ${err.message}<br>
+            <small>Verificá que las API keys estén configuradas en Vercel</small>
+          </div>`;
+      }
+    }
+
+    fetchData();
+    setInterval(fetchData, 300000); // refresh cada 5 min
+  </script>
+</body>
+</html>
