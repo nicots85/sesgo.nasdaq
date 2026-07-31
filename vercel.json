@@ -4,6 +4,10 @@
     {
       "path": "/api/cron",
       "schedule": "0 11 * * 1-5"
+    },
+    {
+      "path": "/api/box-capture",
+      "schedule": "15 21 * * 1-5"
     }
   ]
 }

@@ -1,0 +1,26 @@
+{
+  "overnight": [
+    {
+      "boxName": "overnight",
+      "high": 28640.75,
+      "low": 28432.25,
+      "nBars": 330,
+      "datoInsuficiente": false,
+      "breakout": "alcista",
+      "resultado": "reversion",
+      "magnitudPct": -0.8309838254933967
+    }
+  ],
+  "ib": [
+    {
+      "boxName": "ib",
+      "high": 28725.75,
+      "low": 28079.75,
+      "nBars": 60,
+      "datoInsuficiente": false,
+      "breakout": "sin_ruptura",
+      "resultado": "neutro",
+      "magnitudPct": 0
+    }
+  ]
+}
