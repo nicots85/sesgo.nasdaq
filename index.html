@@ -553,8 +553,8 @@
               </div>
             </div>
             <div style="margin-top:16px;padding:12px;background:var(--surface2);border-radius:8px;font-size:0.85rem;color:var(--text-muted)">
-              <strong>Metodología:</strong> Backtest con datos Dukascopy (515 días) y validación cruzada con QQQ vía Alpaca (501 días).
-              Overnight box: tendencia desde cierre anterior. IB box: tendencia después de la primera hora de sesión.
+              <strong>Metodología:</strong> Backtest con datos Dukascopy (515 días) y validación cruzada con QQQ vía Alpaca (501 días). 
+              Overnight box: tendencia desde cierre anterior. IB box: tendencia después de la primera hora de sesión. 
               Sweep + Confirmación: se define si el sweep del IB fue seguido por confirmación o rechazo.
               <br><em>Valores de referencia — el cron de box-capture (21:15 UTC) actualizará estos datos dinámicamente tras ~30 días hábiles de acumular historial.</em>
             </div>
@@ -590,7 +590,7 @@
     // Phase detection
     function getArWeekday() {
       const now = new Date();
-      const offset = now.getTimezoneOffset() + 180; // UTC-3 for Argentina
+      const offset = now.getTimezoneOffset() + 180;
       const arTime = new Date(now.getTime() + offset * 60000);
       return arTime.getDay();
     }
