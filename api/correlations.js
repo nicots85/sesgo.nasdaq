@@ -14,6 +14,7 @@ const PAIRS = [
   ['dxy', 'sp500', 'DXY ↔ S&P 500'],
   ['dxy', 'nasdaq', 'DXY ↔ Nasdaq'],
   ['dxy', 'usdjpy', 'DXY ↔ USD/JPY'],
+  ['usdjpy', 'nasdaq', 'USD/JPY ↔ Nasdaq'],
   ['wti', 'nasdaq', 'WTI ↔ Nasdaq']
 ];
 

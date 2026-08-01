@@ -22,13 +22,13 @@ const mockData = {
     ]
   },
   market: {
-    vix: { price: 17.1 }, dxy: { price: 100.19 },
+    vix: { price: 17.1, change: -12.8 }, dxy: { price: 100.19, change: 0.33 },
     usdjpy: { price: 160.68, change: 0.72 },
     sp500: { price: 7437.63, change: 1.66 },
     nasdaq: { price: 25122.18, change: 2.78 },
     nikkei: { price: 41500, change: 5.2 },
     kospi: { price: 3100, change: 8.0 },
-    wti: { price: 78.2 },
+    wti: { price: 78.2, change: 0.1 },
     fearGreed: { value: 39, label: 'Miedo' }
   },
   correlations: {
@@ -36,6 +36,10 @@ const mockData = {
     vix__nasdaq: { label: 'VIX ↔ Nasdaq', r: -0.71, rSquared: 0.5, pValue: 0.0001, significant: true, cointegration: { isCointegrated: false }, rollingHistory: [-0.5, -0.6, -0.7] },
     vix__sp500: { label: 'VIX ↔ S&P 500', r: -0.75, rSquared: 0.56, pValue: 0.0001, significant: true, cointegration: { isCointegrated: false } },
     dxy__sp500: { label: 'DXY ↔ S&P 500', r: -0.3, rSquared: 0.09, pValue: 0.02, significant: true, cointegration: { isCointegrated: false } },
+    usdjpy__nasdaq: { label: 'USD/JPY ↔ Nasdaq', r: 0.25, rSquared: 0.06, pValue: 0.03, significant: true, cointegration: { isCointegrated: false } },
+    nikkei__nasdaq: { label: 'Nikkei ↔ Nasdaq', r: 0.55, rSquared: 0.3, pValue: 0.0005, significant: true, cointegration: { isCointegrated: true } },
+    kospi__nasdaq: { label: 'KOSPI ↔ Nasdaq', r: 0.48, rSquared: 0.23, pValue: 0.001, significant: true, cointegration: { isCointegrated: false } },
+    wti__nasdaq: { label: 'WTI ↔ Nasdaq', r: 0.05, rSquared: 0.002, pValue: 0.4, significant: false, cointegration: { isCointegrated: false } },
   },
   news: {
     analysis: {
@@ -79,6 +83,7 @@ async function run() {
   try {
     window.renderHero(mockData.bias);
     window.renderQuickMetrics(mockData.market);
+    window.renderPushTable(mockData.correlations, mockData.market);
     window.renderFactors(mockData.bias);
     window.renderMetrics(mockData.market);
     window.renderCorrelations(mockData.correlations);
@@ -111,6 +116,13 @@ async function run() {
   assert(doc.getElementById('alertBox').style.display === 'block', 'la alerta debería estar visible');
   assert(doc.getElementById('detailSection').classList.contains('open') === false, 'el detalle debe arrancar CERRADO por defecto');
   assert(doc.getElementById('boxNote').textContent.includes('acumulando') || doc.getElementById('boxNote').textContent.includes('1 días'), 'la nota de la caja debería reflejar el estado de acumulación');
+
+  // --- Nuevas aserciones: tabla de empuje de correlacionados ---
+  const pushRows = doc.getElementById('pushTableContainer').children;
+  assert(pushRows.length === 5, `esperaba 5 filas en la tabla de empuje (wti excluido por no-significativo), dio ${pushRows.length}`);
+  assert(pushRows[0].textContent.includes('VIX'), `la primera fila debería ser VIX (mayor |r|), dio: ${pushRows[0].textContent}`);
+  assert(doc.getElementById('pushConsensus').textContent.includes('4 de 5'), `el consenso debería decir "4 de 5", dio: ${doc.getElementById('pushConsensus').textContent}`);
+  assert(doc.getElementById('quickMetrics').children[0].textContent.includes('-12.80%') || doc.getElementById('quickMetrics').children[0].textContent.includes('-12.8%'), 'el VIX en quickMetrics ahora debería mostrar su change real (bug corregido)');
 
   console.log('OK: el render completo funciona sin errores con datos de ejemplo realistas.');
   console.log('Frase generada en el hero:', JSON.stringify(doc.getElementById('heroReason').textContent));

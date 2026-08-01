@@ -285,6 +285,48 @@
       margin-top: 12px;
       line-height: 1.5;
     }
+
+    /* ============ Tabla de vista rápida: correlacionados ============ */
+    .push-consensus {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 14px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: var(--surface2);
+    }
+
+    .push-table { width: 100%; border-collapse: collapse; }
+    .push-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 4px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.88rem;
+    }
+    .push-row:last-child { border-bottom: none; }
+
+    .push-asset { font-weight: 600; }
+    .push-asset .push-r { display: block; font-size: 0.7rem; color: var(--text-muted); font-weight: 400; margin-top: 1px; }
+
+    .push-change { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; min-width: 64px; }
+
+    .push-arrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      border-radius: 100px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      min-width: 84px;
+      justify-content: center;
+    }
+    .push-arrow.up { background: var(--green-bg); color: var(--green); }
+    .push-arrow.down { background: var(--red-bg); color: var(--red); }
+    .push-arrow.flat { background: var(--surface2); color: var(--text-muted); }
   </style>
 </head>
 <body>
@@ -317,6 +359,13 @@
 
       <!-- 4 números clave, nada más -->
       <div class="quick-metrics" id="quickMetrics"></div>
+
+      <!-- Vista rápida: hacia dónde empujan los activos correlacionados -->
+      <div class="card" id="pushCard">
+        <div class="card-title">Correlacionados con Nasdaq — hacia dónde empujan hoy</div>
+        <div class="push-consensus" id="pushConsensus"></div>
+        <div id="pushTableContainer"></div>
+      </div>
 
       <!-- Todo lo demás, oculto por defecto -->
       <button class="detail-toggle" id="detailToggle">
@@ -494,12 +543,12 @@
       });
     }
 
-    // ---------- 4 números clave, no 9 ----------
+    // ---------- 4 números clave, no 9 (con el change real de VIX/DXY, no null) ----------
     function renderQuickMetrics(market) {
       const grid = document.getElementById('quickMetrics');
       const items = [
-        { label: 'VIX', price: market.vix?.price, change: null },
-        { label: 'DXY (Dólar)', price: market.dxy?.price, change: null },
+        { label: 'VIX', price: market.vix?.price, change: market.vix?.change },
+        { label: 'DXY (Dólar)', price: market.dxy?.price, change: market.dxy?.change },
         { label: 'USD/JPY', price: market.usdjpy?.price, change: market.usdjpy?.change },
         { label: 'S&P 500', price: market.sp500?.price, change: market.sp500?.change },
       ];
@@ -509,6 +558,71 @@
           <div class="quick-metric-value">${i.price != null ? formatNum(i.price, i.price > 1000 ? 0 : 2) : '--'}</div>
           <div class="quick-metric-change ${changeColor(i.change)}">${i.change != null ? formatPct(i.change) : ''}</div>
         </div>`).join('');
+    }
+
+    // ---------- Vista rápida: hacia dónde empujan los correlacionados ----------
+    // Solo activos con correlación ESTADÍSTICAMENTE SIGNIFICATIVA (p < 0.05) y
+    // con fuerza mínima (|r| >= 0.2) entran acá — mostrar ruido no ayuda a inferir nada.
+    const PUSH_MIN_ABS_R = 0.2;
+    // Mapeo clave-de-correlación -> clave-en-market -> etiqueta corta
+    const PUSH_ASSETS = [
+      { corrKey: 'dxy__nasdaq', marketKey: 'dxy', shortLabel: 'DXY' },
+      { corrKey: 'vix__nasdaq', marketKey: 'vix', shortLabel: 'VIX' },
+      { corrKey: 'usdjpy__nasdaq', marketKey: 'usdjpy', shortLabel: 'USD/JPY' },
+      { corrKey: 'nikkei__nasdaq', marketKey: 'nikkei', shortLabel: 'Nikkei' },
+      { corrKey: 'kospi__nasdaq', marketKey: 'kospi', shortLabel: 'KOSPI' },
+      { corrKey: 'wti__nasdaq', marketKey: 'wti', shortLabel: 'WTI' },
+    ];
+
+    function renderPushTable(correlations, market) {
+      const container = document.getElementById('pushTableContainer');
+      const consensusEl = document.getElementById('pushConsensus');
+
+      const rows = [];
+      for (const { corrKey, marketKey, shortLabel } of PUSH_ASSETS) {
+        const c = correlations?.[corrKey];
+        const change = market?.[marketKey]?.change;
+        if (!c || c.error || !c.significant || Math.abs(c.r) < PUSH_MIN_ABS_R) continue;
+        if (change == null || change === 0) continue;
+
+        const pushSign = Math.sign(change) * Math.sign(c.r);
+        rows.push({ shortLabel, change, r: c.r, pushSign });
+      }
+
+      if (rows.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem">Sin correlaciones significativas hoy para inferir empuje.</div>';
+        consensusEl.style.display = 'none';
+        return;
+      }
+
+      // Ordenamos por fuerza de correlación (|r|), lo más confiable arriba.
+      rows.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+
+      const nUp = rows.filter(r => r.pushSign > 0).length;
+      const nDown = rows.filter(r => r.pushSign < 0).length;
+
+      consensusEl.style.display = 'block';
+      if (nUp > nDown) {
+        consensusEl.textContent = `▲ ${nUp} de ${rows.length} activos correlacionados empujan al alza`;
+        consensusEl.style.color = 'var(--green)';
+      } else if (nDown > nUp) {
+        consensusEl.textContent = `▼ ${nDown} de ${rows.length} activos correlacionados empujan a la baja`;
+        consensusEl.style.color = 'var(--red)';
+      } else {
+        consensusEl.textContent = `${rows.length} activos correlacionados, señales mixtas (${nUp} arriba / ${nDown} abajo)`;
+        consensusEl.style.color = 'var(--yellow)';
+      }
+
+      container.innerHTML = rows.map(row => {
+        const arrowCls = row.pushSign > 0 ? 'up' : row.pushSign < 0 ? 'down' : 'flat';
+        const arrowSymbol = row.pushSign > 0 ? '▲ Alcista' : row.pushSign < 0 ? '▼ Bajista' : '— Neutral';
+        return `
+          <div class="push-row">
+            <div class="push-asset">${row.shortLabel}<span class="push-r">r ${row.r > 0 ? '+' : ''}${row.r.toFixed(2)}</span></div>
+            <div class="push-change ${changeColor(row.change)}">${formatPct(row.change)}</div>
+            <div class="push-arrow ${arrowCls}">${arrowSymbol}</div>
+          </div>`;
+      }).join('');
     }
 
     // ---------- Todo lo demás vive dentro del detalle ----------
@@ -751,6 +865,7 @@
 
         renderHero(data.bias);
         renderQuickMetrics(data.market);
+        renderPushTable(data.correlations, data.market);
         renderFactors(data.bias);
         renderMetrics(data.market);
         renderCorrelations(data.correlations);
