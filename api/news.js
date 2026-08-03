@@ -65,4 +65,33 @@ async function fetchAndAnalyzeNews() {
   };
 }
 
-module.exports = { fetchAndAnalyzeNews };
+// Handler HTTP para Vercel (/api/news) y server.js local.
+// Devuelve noticias + análisis IA, ordenadas por impacto para trading.
+async function handler(req, res) {
+  try {
+    const result = await fetchAndAnalyzeNews();
+    // Ordenar por impacto: |score| más grande primero (las que más mueven NQ)
+    const individual = [...(result.analysis.individual || [])]
+      .sort((a, b) => Math.abs(b.score || 0) - Math.abs(a.score || 0))
+      .slice(0, 6);
+    const body = JSON.stringify({ ...result, analysis: { ...result.analysis, individual }, timestamp: new Date().toISOString() });
+    if (res) {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Cache-Control', 'no-store');
+      res.writeHead(200);
+      res.end(body);
+      return;
+    }
+    return body;
+  } catch (e) {
+    console.error('/api/news error:', e.message);
+    if (res) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+      return;
+    }
+    return JSON.stringify({ error: e.message });
+  }
+}
+
+module.exports = { fetchAndAnalyzeNews, handler };

@@ -249,6 +249,24 @@
     .news-title { font-weight: 500; font-size: 0.88rem; }
     .news-reason { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; font-style: italic; }
 
+    /* Noticias para el trade — siempre visibles, refresh frecuente */
+    .trade-news { display: flex; flex-direction: column; gap: 8px; }
+    .trade-news-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+    .trade-news-refresh { font-size: 0.72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .trade-news-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--surface2); border-radius: 8px; border-left: 4px solid var(--border); }
+    .trade-news-item.impact-alta { border-left-color: var(--red); }
+    .trade-news-item.impact-media { border-left-color: var(--yellow); }
+    .trade-news-item.impact-baja { border-left-color: var(--border); }
+    .trade-news-score { font-size: 1.1rem; font-weight: 800; min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
+    .trade-news-body { flex: 1; min-width: 0; }
+    .trade-news-title { font-weight: 600; font-size: 0.88rem; line-height: 1.35; }
+    .trade-news-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+    .trade-news-reason { font-size: 0.75rem; color: var(--text-muted); margin-top: 3px; font-style: italic; }
+    .trade-news-overall { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; }
+    .trade-news-overall-score { font-size: 2.2rem; font-weight: 800; line-height: 1; }
+    .trade-news-kf { font-size: 0.82rem; margin-top: 2px; }
+    .trade-news-empty { padding: 16px; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+
     .chart-container { height: 200px; position: relative; }
 
     .history-bars { display: flex; align-items: flex-end; gap: 3px; height: 100px; padding-top: 10px; }
@@ -359,6 +377,14 @@
 
       <!-- 4 números clave, nada más -->
       <div class="quick-metrics" id="quickMetrics"></div>
+
+      <!-- Noticias para el trade — siempre visibles, refresh frecuente -->
+      <div class="card" id="tradeNewsCard">
+        <div class="card-title">Noticias para el trade (tiempo real)</div>
+        <div class="trade-news" id="tradeNews">
+          <div class="trade-news-empty">Cargando noticias...</div>
+        </div>
+      </div>
 
       <!-- Vista rápida: hacia dónde empujan los activos correlacionados -->
       <div class="card" id="pushCard">
@@ -692,6 +718,64 @@
       container.innerHTML = html;
     }
 
+    // Noticias para el trade — siempre visibles, refresh frecuente
+    let lastTradeNews = null;
+    function renderTradeNews(data) {
+      const el = document.getElementById('tradeNews');
+      if (!el) return;
+      const analysis = data?.analysis || {};
+      const items = analysis.individual || [];
+      const overall = analysis.overall_score || 0;
+      const oCol = overall > 20 ? 'var(--green)' : overall < -20 ? 'var(--red)' : 'var(--yellow)';
+      const oBg = overall > 20 ? 'var(--green-bg)' : overall < -20 ? 'var(--red-bg)' : 'var(--yellow-bg)';
+
+      let html = `<div class="trade-news-overall" style="background:${oBg}">
+        <div class="trade-news-overall-score" style="color:${oCol}">${overall > 0 ? '+' : ''}${overall}</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:0.9rem">Sentimiento general de las noticias</div>
+          ${analysis.key_factor ? `<div class="trade-news-kf">Factor clave: <strong>${analysis.key_factor}</strong></div>` : ''}
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);text-align:right">Peso en sesgo: 13%</div>
+      </div>`;
+
+      if (items.length === 0) {
+        html += '<div class="trade-news-empty">Sin noticias relevantes ahora</div>';
+      } else {
+        items.slice(0, 5).forEach(n => {
+          const s = n.score || 0;
+          const col = s > 20 ? 'var(--green)' : s < -20 ? 'var(--red)' : 'var(--yellow)';
+          const impact = Math.abs(s) > 40 ? 'impact-alta' : Math.abs(s) > 20 ? 'impact-media' : 'impact-baja';
+          const dir = s > 0 ? '▲' : s < 0 ? '▼' : '●';
+          html += `<div class="trade-news-item ${impact}">
+            <div class="trade-news-score" style="color:${col}">${dir} ${s > 0 ? '+' : ''}${s}</div>
+            <div class="trade-news-body">
+              <div class="trade-news-title">${n.title}</div>
+              ${n.reason ? `<div class="trade-news-reason">${n.reason}</div>` : ''}
+            </div>
+          </div>`;
+        });
+      }
+
+      const ts = data?.timestamp ? new Date(data.timestamp).toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '';
+      const sources = data?.sources;
+      const srcTxt = sources ? `${sources.total} noticias (${sources.english} EN / ${sources.spanish} ES)` : '';
+      html += `<div class="trade-news-refresh" style="margin-top:8px">Última actualización: ${ts || '--'} · ${srcTxt} · auto-refresh 45s</div>`;
+      el.innerHTML = html;
+      lastTradeNews = data;
+    }
+
+    // Fetch independiente de noticias (rápido, no recarga el panel completo)
+    async function fetchTradeNews() {
+      try {
+        const res = await fetch(`${API_BASE}/api/news`);
+        if (!res.ok) return;
+        const data = await res.json();
+        renderTradeNews(data);
+      } catch (e) {
+        console.warn('trade news error:', e);
+      }
+    }
+
     function renderNews(news, sources) {
       const list = document.getElementById('newsList');
       if (!news.individual || news.individual.length === 0) {
@@ -888,6 +972,17 @@
 
     fetchData();
     setInterval(fetchData, 300000);
+
+    // Noticias para el trade: refresh frecuente e independiente del panel.
+    // Envuelto en try/catch para entornos sin fetch global (p.ej. tests jsdom).
+    try {
+      if (typeof fetch === 'function') {
+        fetchTradeNews();
+        setInterval(fetchTradeNews, 45000);
+      }
+    } catch (e) {
+      console.warn('trade news init:', e);
+    }
   </script>
 </body>
 </html>
