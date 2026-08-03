@@ -94,4 +94,6 @@ async function handler(req, res) {
   }
 }
 
-module.exports = { fetchAndAnalyzeNews, handler };
+module.exports = handler;
+module.exports.fetchAndAnalyzeNews = fetchAndAnalyzeNews;
+module.exports.handler = handler;
