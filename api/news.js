@@ -32,8 +32,17 @@ async function fetchAndAnalyzeNews() {
 
   const allHeadlines = [...enNews, ...esNews, ...newsapiNews].filter(h => h.title);
 
+  // Priorizar geopolítica (determinante): mover las fuentes geopolíticas al frente
+  const GEO = ['BBC', 'Al Jazeera', 'Guardian', 'Reuters', 'Bloomberg', 'France24', 'CNBC Politics', 'RT'];
+  const geo = allHeadlines.filter(h => GEO.some(g => h.source.includes(g)));
+  const rest = allHeadlines.filter(h => !GEO.some(g => h.source.includes(g)));
+  const ordered = [...geo, ...rest];
+
+  // Límite de headlines para el análisis Groq (evita saturar el contexto)
+  const forAnalysis = ordered.slice(0, 30);
+
   let analysis;
-  if (allHeadlines.length === 0) {
+  if (forAnalysis.length === 0) {
     analysis = {
       overall_score: 0,
       confidence: 'baja',
@@ -42,7 +51,7 @@ async function fetchAndAnalyzeNews() {
       alert: null
     };
   } else {
-    analysis = await analyzeNews(allHeadlines);
+    analysis = await analyzeNews(forAnalysis);
   }
 
   return {
