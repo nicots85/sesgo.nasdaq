@@ -28,7 +28,6 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
   const kospiChg = market.kospi?.change || 0;
   const sp500Chg = market.sp500?.change || 0;
   const wtiPrice = market.wti?.price || 75;
-  const fg = market.fearGreed?.value ?? 50;
   const nasdaqChg = market.nasdaq?.change ?? null;
   const newsScore = newsAnalysis?.overall_score || 0;
 
@@ -64,7 +63,7 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
       name: 'Caja overnight',
       description: cajaDescripcion,
       score: cajaScore,
-      weight: 0.35,
+      weight: 0.40,
       raw: cajaRaw
     },
     {
@@ -136,13 +135,6 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
       score: wtiPrice > 100 ? -50 : wtiPrice > 85 ? -20 : wtiPrice > 70 ? -10 : wtiPrice >= 60 ? 15 : 40,
       weight: 0.04,
       raw: wtiPrice
-    },
-    {
-      name: 'Fear & Greed',
-      description: fg < 25 ? 'Miedo extremo (contrarian positivo)' : fg < 40 ? 'Miedo' : fg > 75 ? 'Codicia extrema (riesgo)' : fg > 60 ? 'Codicia' : 'Neutral',
-      score: fg < 20 ? 60 : fg < 35 ? 30 : fg > 80 ? -50 : fg > 65 ? -20 : 0,
-      weight: 0.05,
-      raw: fg
     },
     {
       name: 'Noticias (IA)',

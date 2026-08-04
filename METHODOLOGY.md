@@ -37,16 +37,28 @@ El resultado se redondea al entero más cercano.
 
 | # | Factor | Qué mide (`raw`) | Peso | Cómo se calcula el score |
 |---|--------|-------------------|------|---------------------------|
-| 1 | Caja overnight | % de veces que una ruptura alcista del rango overnight continuó (backtest propio, ver `box-capture.js`) | **0.35** | `(pctContinuación - 50) × 2` — 50% = score 0 (neutro), 100% = score 100 |
+| 1 | Caja overnight | % de veces que una ruptura alcista del rango overnight continuó (backtest propio, ver `box-capture.js`) | **0.40** | `(pctContinuación - 50) × 2` — 50% = score 0 (neutro), 100% = score 100 |
 | 2 | VIX | Nivel del índice VIX | 0.10 | Escalones: <15→+80, <17→+50, <20→+10, <25→-50, ≥25→-80 |
 | 3 | DXY (Dólar) | Nivel del índice dólar (proxy) | 0.08 | Escalones: <99→+60, <102→+10, <104→-30, ≥104→-60 |
 | 4 | USD/JPY | % de cambio del día | 0.08 | Escalones: >1%→+50, >0.3%→+20, <-1.5%→-80, <-0.5%→-40, resto→0 |
 | 5 | Nikkei | % de cambio del día | **0.06 o 0.01** (ver sección 4) | Solo si cointegrado con Nasdaq: >1%→+60, >0%→+30, <-1%→-60, <0%→-30. Si no cointegrado: **0** |
 | 6 | KOSPI | % de cambio del día | **0.05 o 0.01** (ver sección 4) | Misma lógica que Nikkei |
 | 7 | S&P 500 | % de cambio del día | 0.06 | Escalones: >1%→+50, >0.3%→+20, <-1%→-50, <-0.3%→-20, resto→0 |
-| 8 | Crudo (WTI) | Precio en USD | 0.04 | Escalones: >100→-50, >85→-20, >70→-10, ≥60→+15, <60→+40 |
-| 9 | Fear & Greed | Índice 0-100 (proxy calculado desde el VIX — **no es el índice oficial de CNN**, ver limitación) | 0.05 | <20→+60, <35→+30, >80→-50, >65→-20, resto→0 |
+| 8 | Momentum Nasdaq | % de cambio del día del propio ^NDX (incluye pre-market) | 0.10 | Escalones: >1.5%→+80, >0.5%→+40, >0.2%→+15, <-1.5%→-80, <-0.5%→-40, <-0.2%→-15, resto→0 |
+| 9 | Crudo (WTI) | Precio en USD | 0.04 | Escalones: >100→-50, >85→-20, >70→-10, ≥60→+15, <60→+40 |
 | 10 | Noticias (IA) | Score de sentimiento (-100 a +100) de Groq/Llama 3.3 sobre RSS + NewsAPI | 0.13 | Se usa directo, acotado a [-100, 100] |
+
+> **¿Por qué ya no hay "Fear & Greed"?** Hasta la Fase 1, el índice
+> ponderaba "VIX" (peso 0.10) y "Fear & Greed" (peso 0.05) como dos
+> señales independientes. Pero en `api/market.js`, `fetchFearGreed()`
+> calcula el valor de Fear & Greed **a partir del propio VIX** (buckets
+> fijos sobre el precio del VIX), no desde un dato independiente. Eran la
+> misma información contada dos veces, con 0.15 de peso combinado. Se
+> eliminó el factor del cálculo ponderado, y los 0.05 liberados se
+> reasignaron a "Caja overnight" (ahora 0.40), el único factor con
+> evidencia estadística validada hasta ahora (Fase B). El dato de Fear &
+> Greed **sigue devolviéndose** en la respuesta de la API dentro de
+> `market.fearGreed` — solo como información, sin ponderar en el score.
 
 ## 4. El caso especial de Nikkei y KOSPI: peso condicional
 
@@ -67,13 +79,13 @@ contribuciones cambia — esto es esperado, no un error.
 
 ## 5. Los pesos NO están optimizados estadísticamente
 
-Esto hay que decirlo sin vueltas: los 10 pesos (0.35, 0.10, 0.08...) son
+Esto hay que decirlo sin vueltas: los 10 pesos (0.40, 0.10, 0.08...) son
 **asignados por criterio propio** (cuánta importancia le damos a cada
 factor en la práctica de trading), no el resultado de una regresión, un
 modelo de optimización, ni ningún proceso estadístico que los derive de
-datos históricos. El peso de 0.35 en "Caja overnight" refleja que es el
+datos históricos. El peso de 0.40 en "Caja overnight" refleja que es el
 factor en el que más confiamos, no que un modelo haya demostrado que
-explica el 35% de la varianza del movimiento del Nasdaq.
+explica el 40% de la varianza del movimiento del Nasdaq.
 
 Esta es precisamente la pregunta que la **Fase B** (backtest retroactivo
 parcial, en curso) busca empezar a responder: ¿el score, tal como está
@@ -94,14 +106,16 @@ estadísticamente.
 
 ## 7. Limitaciones conocidas (activas al momento de escribir esto)
 
-- **Caja overnight (peso 0.35, el factor más pesado)**: hasta que se
+- **Caja overnight (peso 0.40, el factor más pesado)**: hasta que se
   acumulen 30 días hábiles de historial real vía `box-capture.js`, usa
   un valor de referencia fijo de un backtest manual de 515 días
   (56.7% de continuación). Se actualiza solo una vez alcanzado ese
   mínimo — ver `api/box-capture.js`.
-- **Fear & Greed no es el índice oficial de CNN** — es un proxy
-  calculado a partir del VIX, porque CNN bloquea el acceso automatizado.
-  Puede no coincidir exactamente con lo que se ve en la web de CNN.
+- **El proxy de Fear & Greed ya no pondera** (ver nota en sección 3): se
+  sigue calculando y devolviendo en `market.fearGreed` como dato
+  informativo, pero no es el índice oficial de CNN (es un proxy del VIX,
+  porque CNN bloquea el acceso automatizado) y desde la Fase 1 quedó
+  fuera del cálculo del score para evitar doble conteo con el factor VIX.
 - **KOSPI**: la fuente (Yahoo Finance) devuelve ocasionalmente un dato
   corrupto; el código cae a un valor fijo de emergencia
   (`_invalid: true`) cuando esto pasa. Pendiente de una fuente más
