@@ -45,16 +45,17 @@ function run() {
   const namesA = biasA.factors.map(f => f.name);
   assert(!namesA.includes('Fear & Greed'),
     `Caso A: 'Fear & Greed' NO debería estar en bias.factors, está`);
-  assert(namesA.includes('Momentum Nasdaq'), 'Momentum Nasdaq debe seguir presente');
+  assert(!namesA.includes('Momentum Nasdaq'),
+    `Caso A: 'Momentum Nasdaq' NO debería estar en bias.factors (circular), está`);
 
   const cajaA = biasA.factors.find(f => f.name === 'Caja overnight');
   assert(cajaA, 'Caso A: debería existir el factor "Caja overnight"');
-  assert(cajaA.weight === 0.40,
-    `Caso A: "Caja overnight" debería tener weight 0.40, tiene ${cajaA.weight}`);
+  assert(cajaA.weight === 0.50,
+    `Caso A: "Caja overnight" debería tener weight 0.50, tiene ${cajaA.weight}`);
 
   // Total esperado con ambos cointegrados:
-  // Caja 0.40 + VIX 0.10 + DXY 0.08 + USD/JPY 0.08 + Nikkei 0.06 +
-  // KOSPI 0.05 + S&P500 0.06 + Momentum Nasdaq 0.10 + WTI 0.04 + Noticias 0.13 = 1.10
+  // Caja 0.50 + VIX 0.10 + DXY 0.08 + USD/JPY 0.08 + Nikkei 0.06 +
+  // KOSPI 0.05 + S&P500 0.06 + WTI 0.04 + Noticias 0.13 = 1.10
   const TOTAL_COINTEGRADOS = 1.10;
   const sumA = sumWeights(biasA.factors);
   assert(Math.abs(sumA - TOTAL_COINTEGRADOS) < 1e-9,
@@ -68,8 +69,8 @@ function run() {
     `Caso B: 'Fear & Greed' NO debería estar en bias.factors, está`);
 
   const cajaB = biasB.factors.find(f => f.name === 'Caja overnight');
-  assert(cajaB.weight === 0.40,
-    `Caso B: "Caja overnight" debería tener weight 0.40, tiene ${cajaB.weight}`);
+  assert(cajaB.weight === 0.50,
+    `Caso B: "Caja overnight" debería tener weight 0.50, tiene ${cajaB.weight}`);
 
   // Total esperado sin cointegración:
   // 1.10 - Nikkei (0.06→0.01) - KOSPI (0.05→0.01) = 1.10 - 0.05 - 0.04 = 1.01
@@ -86,7 +87,7 @@ function run() {
     console.log(`  ${f.name.padEnd(20)} weight=${f.weight}`);
   }
   console.log('');
-  console.log(`OK: 'Fear & Greed' eliminado, 'Caja overnight' en 0.40, ` +
+  console.log(`OK: 'Fear & Greed' y 'Momentum Nasdaq' eliminados, 'Caja overnight' en 0.50, ` +
     `suma de pesos correcta (${TOTAL_COINTEGRADOS} cointegrados / ${TOTAL_SIN_COINTEGRACION} sin cointegración).`);
 }
 

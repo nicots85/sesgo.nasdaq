@@ -9,15 +9,14 @@ const mockData = {
   bias: {
     score: 42, label: 'Alcista con cautela', emoji: '🟢',
     factors: [
-      { name: 'Caja overnight', score: 30, weight: 0.35 },
-      { name: 'VIX', score: 55, weight: 0.15 },
-      { name: 'DXY', score: -20, weight: 0.10 },
-      { name: 'Nikkei', score: 60, weight: 0.10 },
-      { name: 'KOSPI', score: 45, weight: 0.08 },
-      { name: 'USD/JPY', score: -15, weight: 0.07 },
+      { name: 'Caja overnight', score: 30, weight: 0.50 },
+      { name: 'VIX', score: 55, weight: 0.10 },
+      { name: 'DXY', score: -20, weight: 0.08 },
+      { name: 'Nikkei', score: 60, weight: 0.06 },
+      { name: 'KOSPI', score: 45, weight: 0.05 },
+      { name: 'USD/JPY', score: -15, weight: 0.08 },
       { name: 'S&P 500', score: 50, weight: 0.06 },
       { name: 'WTI', score: 0, weight: 0.04 },
-      { name: 'Fear & Greed', score: -10, weight: 0.03 },
       { name: 'Noticias', score: 25, weight: 0.13 },
     ]
   },
@@ -26,6 +25,7 @@ const mockData = {
     usdjpy: { price: 160.68, change: 0.72 },
     sp500: { price: 7437.63, change: 1.66 },
     nasdaq: { price: 25122.18, change: 2.78 },
+    nasdaqLive: { price: 25122.18, change: 2.78 },
     nikkei: { price: 41500, change: 5.2 },
     kospi: { price: 3100, change: 8.0 },
     wti: { price: 78.2, change: 0.1 },
@@ -123,7 +123,7 @@ async function run() {
   assert(doc.getElementById('heroReason').textContent.includes('A favor'), 'la frase de razón debería mencionar "A favor"');
   assert(doc.getElementById('heroChips').children.length > 0, 'debería haber al menos un chip');
   assert(doc.getElementById('quickMetrics').children.length === 4, 'quickMetrics debería tener exactamente 4 tarjetas');
-  assert(doc.getElementById('biasFactors').children.length === 10, 'deberían listarse los 10 factores en el detalle');
+  assert(doc.getElementById('biasFactors').children.length === 9, 'deberían listarse los 9 factores en el detalle');
   assert(doc.getElementById('alertBox').style.display === 'block', 'la alerta debería estar visible');
   assert(doc.getElementById('detailSection').classList.contains('open') === false, 'el detalle debe arrancar CERRADO por defecto');
   assert(doc.getElementById('boxNote').textContent.includes('acumulando') || doc.getElementById('boxNote').textContent.includes('1 días'), 'la nota de la caja debería reflejar el estado de acumulación');

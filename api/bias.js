@@ -28,7 +28,6 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
   const kospiChg = market.kospi?.change || 0;
   const sp500Chg = market.sp500?.change || 0;
   const wtiPrice = market.wti?.price || 75;
-  const nasdaqChg = market.nasdaq?.change ?? null;
   const newsScore = newsAnalysis?.overall_score || 0;
 
   const nikkeiCoint = correlations.nikkei__nasdaq?.cointegration?.isCointegrated || false;
@@ -63,7 +62,7 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
       name: 'Caja overnight',
       description: cajaDescripcion,
       score: cajaScore,
-      weight: 0.40,
+      weight: 0.50,
       raw: cajaRaw
     },
     {
@@ -113,21 +112,6 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
       score: sp500Chg > 1 ? 50 : sp500Chg > 0.3 ? 20 : sp500Chg < -1 ? -50 : sp500Chg < -0.3 ? -20 : 0,
       weight: 0.06,
       raw: sp500Chg
-    },
-    {
-      name: 'Momentum Nasdaq',
-      description: nasdaqChg == null ? 'Sin dato de variación' :
-        nasdaqChg > 1.5 ? 'Pre-market/sesión muy alcista' :
-        nasdaqChg > 0.5 ? 'Pre-market/sesión alcista' :
-        nasdaqChg < -1.5 ? 'Pre-market/sesión muy bajista' :
-        nasdaqChg < -0.5 ? 'Pre-market/sesión bajista' : 'Plano',
-      score: nasdaqChg == null ? 0 :
-        nasdaqChg > 1.5 ? 80 : nasdaqChg > 0.5 ? 40 :
-        nasdaqChg > 0.2 ? 15 :
-        nasdaqChg < -1.5 ? -80 : nasdaqChg < -0.5 ? -40 :
-        nasdaqChg < -0.2 ? -15 : 0,
-      weight: 0.10,
-      raw: nasdaqChg
     },
     {
       name: 'Crudo (WTI)',
@@ -239,6 +223,29 @@ async function ensureHistoricalData() {
   return seeded;
 }
 
+function buildMarketResponse(market) {
+  return {
+    nikkei: market.nikkei,
+    kospi: market.kospi,
+    nasdaq: market.nasdaq,
+    // Dato informativo de "Nasdaq ahora" (precio + variación del día).
+    // Queda FUERA de bias.factors a propósito: usar la variación del
+    // propio ^NDX dentro del score que describe el ^NDX sería circular
+    // (el mismo activo como insumo y como objetivo). El frontend lo
+    // muestra como "estado actual" sin que afecte el número del sesgo.
+    nasdaqLive: market.nasdaq ? {
+      price: market.nasdaq.price,
+      change: market.nasdaq.change,
+    } : null,
+    sp500: market.sp500,
+    vix: market.vix,
+    dxy: market.dxy,
+    usdjpy: market.usdjpy,
+    wti: market.wti,
+    fearGreed: market.fearGreed
+  };
+}
+
 async function getBias() {
   const overallTimeout = 25000;
 
@@ -272,17 +279,7 @@ async function getBias() {
 
   return {
     bias,
-    market: {
-      nikkei: market.nikkei,
-      kospi: market.kospi,
-      nasdaq: market.nasdaq,
-      sp500: market.sp500,
-      vix: market.vix,
-      dxy: market.dxy,
-      usdjpy: market.usdjpy,
-      wti: market.wti,
-      fearGreed: market.fearGreed
-    },
+    market: buildMarketResponse(market),
     correlations,
     boxSummary,
     news,
@@ -305,6 +302,7 @@ async function handler(req, res) {
 module.exports = handler;
 module.exports.getBias = getBias;
 module.exports.calculateBias = calculateBias;
+module.exports.buildMarketResponse = buildMarketResponse;
 module.exports.detectAlerts = detectAlerts;
 module.exports.loadHistoricalPrices = loadHistoricalPrices;
 module.exports.saveHistoricalPrices = saveHistoricalPrices;
