@@ -29,6 +29,7 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
   const sp500Chg = market.sp500?.change || 0;
   const wtiPrice = market.wti?.price || 75;
   const fg = market.fearGreed?.value ?? 50;
+  const nasdaqChg = market.nasdaq?.change ?? null;
   const newsScore = newsAnalysis?.overall_score || 0;
 
   const nikkeiCoint = correlations.nikkei__nasdaq?.cointegration?.isCointegrated || false;
@@ -113,6 +114,21 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
       score: sp500Chg > 1 ? 50 : sp500Chg > 0.3 ? 20 : sp500Chg < -1 ? -50 : sp500Chg < -0.3 ? -20 : 0,
       weight: 0.06,
       raw: sp500Chg
+    },
+    {
+      name: 'Momentum Nasdaq',
+      description: nasdaqChg == null ? 'Sin dato de variación' :
+        nasdaqChg > 1.5 ? 'Pre-market/sesión muy alcista' :
+        nasdaqChg > 0.5 ? 'Pre-market/sesión alcista' :
+        nasdaqChg < -1.5 ? 'Pre-market/sesión muy bajista' :
+        nasdaqChg < -0.5 ? 'Pre-market/sesión bajista' : 'Plano',
+      score: nasdaqChg == null ? 0 :
+        nasdaqChg > 1.5 ? 80 : nasdaqChg > 0.5 ? 40 :
+        nasdaqChg > 0.2 ? 15 :
+        nasdaqChg < -1.5 ? -80 : nasdaqChg < -0.5 ? -40 :
+        nasdaqChg < -0.2 ? -15 : 0,
+      weight: 0.10,
+      raw: nasdaqChg
     },
     {
       name: 'Crudo (WTI)',
