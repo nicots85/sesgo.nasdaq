@@ -759,7 +759,7 @@
       const ts = data?.timestamp ? new Date(data.timestamp).toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '';
       const sources = data?.sources;
       const srcTxt = sources ? `${sources.total} noticias (${sources.english} EN / ${sources.spanish} ES)` : '';
-      html += `<div class="trade-news-refresh" style="margin-top:8px">Última actualización: ${ts || '--'} · ${srcTxt} · auto-refresh 45s</div>`;
+      html += `<div class="trade-news-refresh" style="margin-top:8px">Última actualización: ${ts || '--'} · ${srcTxt} · recargá la página para actualizar</div>`;
       el.innerHTML = html;
       lastTradeNews = data;
     }
@@ -973,12 +973,12 @@
     fetchData();
     setInterval(fetchData, 300000);
 
-    // Noticias para el trade: refresh frecuente e independiente del panel.
+    // Noticias para el trade: se consultan AL CARGAR la página (dato fresco de Groq).
+    // Sin auto-refresh en background — cada recarga de página re-consulta.
     // Envuelto en try/catch para entornos sin fetch global (p.ej. tests jsdom).
     try {
       if (typeof fetch === 'function') {
         fetchTradeNews();
-        setInterval(fetchTradeNews, 45000);
       }
     } catch (e) {
       console.warn('trade news init:', e);
