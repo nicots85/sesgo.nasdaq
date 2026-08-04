@@ -589,68 +589,87 @@
     }
 
     // ---------- Vista rápida: hacia dónde empujan los correlacionados ----------
-    // Solo activos con correlación ESTADÍSTICAMENTE SIGNIFICATIVA (p < 0.05) y
-    // con fuerza mínima (|r| >= 0.2) entran acá — mostrar ruido no ayuda a inferir nada.
-    const PUSH_MIN_ABS_R = 0.2;
-    // Mapeo clave-de-correlación -> clave-en-market -> etiqueta corta
+    // Muestra TODOS los activos con su dirección de empuje (variación × correlación).
+    // Los no significativos se atenúan. El consenso cuenta los que tienen señal.
     const PUSH_ASSETS = [
-      { corrKey: 'dxy__nasdaq', marketKey: 'dxy', shortLabel: 'DXY' },
+      { corrKey: 'dxy__nasdaq', marketKey: 'dxy', shortLabel: 'DXY (dólar)' },
       { corrKey: 'vix__nasdaq', marketKey: 'vix', shortLabel: 'VIX' },
       { corrKey: 'usdjpy__nasdaq', marketKey: 'usdjpy', shortLabel: 'USD/JPY' },
       { corrKey: 'nikkei__nasdaq', marketKey: 'nikkei', shortLabel: 'Nikkei' },
       { corrKey: 'kospi__nasdaq', marketKey: 'kospi', shortLabel: 'KOSPI' },
-      { corrKey: 'wti__nasdaq', marketKey: 'wti', shortLabel: 'WTI' },
+      { corrKey: 'wti__nasdaq', marketKey: 'wti', shortLabel: 'WTI (petróleo)' },
     ];
 
     function renderPushTable(correlations, market) {
       const container = document.getElementById('pushTableContainer');
       const consensusEl = document.getElementById('pushConsensus');
 
+      // Mostrar TODOS los activos del mapeo (con su señal), atenuando los no significativos.
+      // Si no hay correlación con Nasdaq o no hay variación, se marca como neutral/sin dato.
       const rows = [];
       for (const { corrKey, marketKey, shortLabel } of PUSH_ASSETS) {
         const c = correlations?.[corrKey];
-        const change = market?.[marketKey]?.change;
-        if (!c || c.error || !c.significant || Math.abs(c.r) < PUSH_MIN_ABS_R) continue;
-        if (change == null || change === 0) continue;
+        const m = market?.[marketKey];
+        const change = m?.change;
+        const corrExists = c && !c.error;
 
-        const pushSign = Math.sign(change) * Math.sign(c.r);
-        rows.push({ shortLabel, change, r: c.r, pushSign });
+        // Sin correlación con Nasdaq → no se puede inferir empuje
+        if (!corrExists) {
+          rows.push({ shortLabel, change: null, r: null, pushSign: 0, significant: false, hasCorr: false });
+          continue;
+        }
+
+        const significant = !!c.significant;
+        // Empuje = dirección del cambio × signo de la correlación.
+        // Solo tiene sentido si hay variación de hoy.
+        let pushSign = 0;
+        if (change != null && change !== 0) {
+          pushSign = Math.sign(change) * Math.sign(c.r);
+        }
+        rows.push({ shortLabel, change, r: c.r, pushSign, significant, hasCorr: true });
       }
 
-      if (rows.length === 0) {
-        container.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem">Sin correlaciones significativas hoy para inferir empuje.</div>';
+      // Activos con señal direccional (variación ≠ 0)
+      const conSeñal = rows.filter(r => r.pushSign !== 0);
+      const nUp = conSeñal.filter(r => r.pushSign > 0).length;
+      const nDown = conSeñal.filter(r => r.pushSign < 0).length;
+
+      if (conSeñal.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem">Sin variaciones de mercado hoy para inferir empuje.</div>';
         consensusEl.style.display = 'none';
         return;
       }
 
-      // Ordenamos por fuerza de correlación (|r|), lo más confiable arriba.
-      rows.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
-
-      const nUp = rows.filter(r => r.pushSign > 0).length;
-      const nDown = rows.filter(r => r.pushSign < 0).length;
-
       consensusEl.style.display = 'block';
       if (nUp > nDown) {
-        consensusEl.textContent = `▲ ${nUp} de ${rows.length} activos correlacionados empujan al alza`;
+        consensusEl.textContent = `▲ ${nUp} de ${conSeñal.length} activos con señal empujan al ALZA`;
         consensusEl.style.color = 'var(--green)';
       } else if (nDown > nUp) {
-        consensusEl.textContent = `▼ ${nDown} de ${rows.length} activos correlacionados empujan a la baja`;
+        consensusEl.textContent = `▼ ${nDown} de ${conSeñal.length} activos con señal empujan a la BAJA`;
         consensusEl.style.color = 'var(--red)';
       } else {
-        consensusEl.textContent = `${rows.length} activos correlacionados, señales mixtas (${nUp} arriba / ${nDown} abajo)`;
+        consensusEl.textContent = `${conSeñal.length} activos con señal, mixto (${nUp} arriba / ${nDown} abajo)`;
         consensusEl.style.color = 'var(--yellow)';
       }
 
       container.innerHTML = rows.map(row => {
         const arrowCls = row.pushSign > 0 ? 'up' : row.pushSign < 0 ? 'down' : 'flat';
         const arrowSymbol = row.pushSign > 0 ? '▲ Alcista' : row.pushSign < 0 ? '▼ Bajista' : '— Neutral';
+        // Atenuar los que no tienen correlación con Nasdaq o no son significativos
+        const dim = (!row.hasCorr || !row.significant) ? 'opacity:0.55;' : '';
+        const corrTxt = row.hasCorr
+          ? `r ${row.r > 0 ? '+' : ''}${row.r.toFixed(2)}${row.significant ? '' : ' *'}`
+          : 'sin corr';
         return `
-          <div class="push-row">
-            <div class="push-asset">${row.shortLabel}<span class="push-r">r ${row.r > 0 ? '+' : ''}${row.r.toFixed(2)}</span></div>
-            <div class="push-change ${changeColor(row.change)}">${formatPct(row.change)}</div>
+          <div class="push-row" style="${dim}">
+            <div class="push-asset">${row.shortLabel}<span class="push-r">${corrTxt}</span></div>
+            <div class="push-change ${row.change != null ? changeColor(row.change) : 'neutral'}">${row.change != null ? formatPct(row.change) : '—'}</div>
             <div class="push-arrow ${arrowCls}">${arrowSymbol}</div>
           </div>`;
       }).join('');
+
+      // Nota explicativa debajo
+      container.innerHTML += '<div style="margin-top:8px;font-size:0.7rem;color:var(--text-muted)">Empuje = variación de hoy × signo de la correlación con Nasdaq. * correlación no significativa estadísticamente (p≥0.05), se muestra pero con menos peso.</div>';
     }
 
     // ---------- Todo lo demás vive dentro del detalle ----------

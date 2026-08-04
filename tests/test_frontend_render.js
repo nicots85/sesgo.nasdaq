@@ -69,13 +69,24 @@ const mockData = {
   ]
 };
 
+async function waitFor(cond, timeoutMs) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    if (cond()) return;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  throw new Error('timeout esperando a que se definan las funciones del script');
+}
+
 async function run() {
   const dom = new JSDOM(html, { runScripts: 'dangerously', resources: 'usable', url: 'https://nasdaq-alpha.vercel.app/' });
   const { window } = dom;
 
   // Esperamos a que el script inline termine de definir todo, y frenamos
   // el fetch real (no hay red en este sandbox) para inyectar el mock a mano.
-  await new Promise(r => setTimeout(r, 300));
+  // El CDN de Chart.js puede tardar según la conexión, así que esperamos a que
+  // las funciones existan en vez de un timeout fijo.
+  await waitFor(() => typeof window.renderHero === 'function' && typeof window.renderPushTable === 'function', 10000);
 
   const errors = [];
   window.onerror = (msg) => errors.push(msg);
@@ -117,11 +128,15 @@ async function run() {
   assert(doc.getElementById('detailSection').classList.contains('open') === false, 'el detalle debe arrancar CERRADO por defecto');
   assert(doc.getElementById('boxNote').textContent.includes('acumulando') || doc.getElementById('boxNote').textContent.includes('1 días'), 'la nota de la caja debería reflejar el estado de acumulación');
 
-  // --- Nuevas aserciones: tabla de empuje de correlacionados ---
+  // --- Aserciones: tabla de empuje de correlacionados ---
+  // Ahora muestra TODOS los activos del mapeo (6 filas) + la nota explicativa.
   const pushRows = doc.getElementById('pushTableContainer').children;
-  assert(pushRows.length === 5, `esperaba 5 filas en la tabla de empuje (wti excluido por no-significativo), dio ${pushRows.length}`);
-  assert(pushRows[0].textContent.includes('VIX'), `la primera fila debería ser VIX (mayor |r|), dio: ${pushRows[0].textContent}`);
-  assert(doc.getElementById('pushConsensus').textContent.includes('4 de 5'), `el consenso debería decir "4 de 5", dio: ${doc.getElementById('pushConsensus').textContent}`);
+  assert(pushRows.length === 7, `esperaba 6 filas de activos + nota (7 children), dio ${pushRows.length}`);
+  // El consenso cuenta los activos con señal (variación ≠ 0). En el mock:
+  // DXY(+0.33%, r-0.42)→▲, VIX(-12.8%, r-0.71)→▼, USD/JPY(+0.72%, r+0.25)→▲,
+  // Nikkei(+5.2%, r+0.55)→▲, KOSPI(+8.0%, r+0.48)→▲, WTI(+0.1%, r+0.05)→▲
+  // => 5 alcista, 1 bajista
+  assert(doc.getElementById('pushConsensus').textContent.includes('5 de 6'), `el consenso debería decir "5 de 6", dio: ${doc.getElementById('pushConsensus').textContent}`);
   assert(doc.getElementById('quickMetrics').children[0].textContent.includes('-12.80%') || doc.getElementById('quickMetrics').children[0].textContent.includes('-12.8%'), 'el VIX en quickMetrics ahora debería mostrar su change real (bug corregido)');
 
   console.log('OK: el render completo funciona sin errores con datos de ejemplo realistas.');
