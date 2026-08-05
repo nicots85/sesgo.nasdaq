@@ -515,9 +515,9 @@
     });
 
     // ---------- Helpers ----------
-    function scoreColor(score) {
-      if (score > 20) return 'var(--green)';
-      if (score < -20) return 'var(--red)';
+    function scoreColor(label) {
+      if (label === 'ALCISTA FUERTE' || label === 'ALCISTA CON CAUTELA') return 'var(--green)';
+      if (label === 'BAJISTA FUERTE' || label === 'BAJISTA CON CAUTELA') return 'var(--red)';
       return 'var(--yellow)';
     }
     function changeColor(v) {
@@ -555,7 +555,7 @@
       document.getElementById('heroEmoji').textContent = bias.emoji;
       const scoreEl = document.getElementById('heroScore');
       scoreEl.textContent = (bias.score > 0 ? '+' : '') + bias.score;
-      scoreEl.style.color = scoreColor(bias.score);
+      scoreEl.style.color = scoreColor(bias.label);
       document.getElementById('heroLabel').textContent = bias.label;
 
       const { frase, aFavor, enContra } = buildReasonSentence(bias.factors);

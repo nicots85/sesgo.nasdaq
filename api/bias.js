@@ -53,6 +53,43 @@ function scoreNoticias(newsScore) {
   return Math.max(-100, Math.min(100, newsScore));
 }
 
+// =====================================================================
+// UMBRALES DE ETIQUETA — FASE 3: calibrados contra la distribución REAL
+// del score (no valores arbitrarios).
+//
+// Cálculo: research/phase-b-structural-backtest/compute-score-distribution.js
+//   Serie de 388 días (2 años Yahoo), pesos ACTUALIZADOS de la Fase 2,
+//   mismas reglas de lag que Fase B (Noticias = 0, Caja = valor de
+//   referencia fijo).
+//   min=5 | max=16 | media=10.96 | desvío=3.09
+//   Percentiles: p10=7, p25=8, p30=9, p40=10, p50=11, p60=13, p70=13,
+//   p75=14, p90=15
+//
+// Regla objetiva de mapeo (NEUTRAL = 40% central real de los datos):
+//   BAJISTA FUERTE:       score <= p10  (<= 7)
+//   BAJISTA CON CAUTELA:  p10 <  score <= p30  (8 a 9)
+//   NEUTRAL:              p30 <  score <= p70  (10 a 13)
+//   ALCISTA CON CAUTELA:  p70 <  score <= p90  (14 a 15)
+//   ALCISTA FUERTE:       score > p90  (> 15)
+//
+// Son valores FIJOS calculados una vez (no percentiles recalculados en
+// cada request). El histórico se recalibra manualmente cada tanto.
+// =====================================================================
+const THRESHOLDS = {
+  alcistaFuerte: 15,   // score > 15 → ALCISTA FUERTE
+  alcistaCautela: 13,  // score > 13 → ALCISTA CON CAUTELA
+  neutral: 9,          // score > 9  → NEUTRAL
+  bajistaCautela: 7,   // score > 7  → BAJISTA CON CAUTELA
+};
+
+function labelFromScore(finalScore) {
+  if (finalScore > THRESHOLDS.alcistaFuerte) return { label: 'ALCISTA FUERTE', emoji: '🟢🟢' };
+  if (finalScore > THRESHOLDS.alcistaCautela) return { label: 'ALCISTA CON CAUTELA', emoji: '🟢' };
+  if (finalScore > THRESHOLDS.neutral) return { label: 'NEUTRAL', emoji: '🟡' };
+  if (finalScore > THRESHOLDS.bajistaCautela) return { label: 'BAJISTA CON CAUTELA', emoji: '🔴' };
+  return { label: 'BAJISTA FUERTE', emoji: '🔴🔴' };
+}
+
 function calculateBias(market, correlations, newsAnalysis, boxSummary) {
   const vixPrice = market.vix?.price || 20;
   const dxyPrice = market.dxy?.price || 101;
@@ -186,12 +223,7 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
   }
   const finalScore = Math.round(totalScore / totalWeight);
 
-  let label, emoji;
-  if (finalScore > 60) { label = 'ALCISTA FUERTE'; emoji = '🟢🟢'; }
-  else if (finalScore > 20) { label = 'ALCISTA CON CAUTELA'; emoji = '🟢'; }
-  else if (finalScore > -20) { label = 'NEUTRAL'; emoji = '🟡'; }
-  else if (finalScore > -60) { label = 'BAJISTA CON CAUTELA'; emoji = '🔴'; }
-  else { label = 'BAJISTA FUERTE'; emoji = '🔴🔴'; }
+  const { label, emoji } = labelFromScore(finalScore);
 
   return { score: finalScore, label, emoji, factors };
 }
@@ -364,3 +396,5 @@ module.exports.scoreKospi = scoreKospi;
 module.exports.scoreSp500 = scoreSp500;
 module.exports.scoreWti = scoreWti;
 module.exports.scoreNoticias = scoreNoticias;
+module.exports.THRESHOLDS = THRESHOLDS;
+module.exports.labelFromScore = labelFromScore;

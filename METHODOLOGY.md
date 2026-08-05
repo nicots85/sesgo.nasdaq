@@ -143,13 +143,32 @@ sobre 388 días, no una garantía.
 
 ## 7. Umbrales de la etiqueta final
 
+Los umbrales se **calibran contra la distribución real del score**, no a
+ojo. El cálculo se hace con `research/.../compute-score-distribution.js`:
+reconstruye el score completo día por día (388 días, 2 años de Yahoo),
+con los pesos actualizados de la Fase 2 y las mismas reglas de lag de la
+Fase B (Noticias = 0, Caja = valor de referencia fijo).
+
+Serie calculada el **2026-08-04**: min=5 | max=16 | media=10.96 |
+desvío=3.09. Percentiles: p10=7, p25=8, p30=9, p40=10, p50=11, p60=13,
+p70=13, p75=14, p90=15.
+
+Regla objetiva de mapeo (NEUTRAL = 40% central real de los datos):
+
 | Score | Etiqueta |
 |-------|----------|
-| > 60 | ALCISTA FUERTE |
-| 20 a 60 | ALCISTA CON CAUTELA |
-| -20 a 20 | NEUTRAL |
-| -60 a -20 | BAJISTA CON CAUTELA |
-| < -60 | BAJISTA FUERTE |
+| > 15 (score > p90) | ALCISTA FUERTE |
+| 14 a 15 (p70 < score ≤ p90) | ALCISTA CON CAUTELA |
+| 10 a 13 (p30 < score ≤ p70) | NEUTRAL |
+| 8 a 9 (p10 < score ≤ p30) | BAJISTA CON CAUTELA |
+| ≤ 7 (score ≤ p10) | BAJISTA FUERTE |
+
+> **Cuándo recalibrar:** los valores numéricos quedaron fijos en
+> `api/bias.js` (constante `THRESHOLDS`) y no se recalculan en cada
+> request. Se recalibran **manualmente** cuando cambien materialmente los
+> pesos de los factores (una nueva Fase de re-ponderación) o cada unos
+> meses de datos nuevos acumulados. La fecha de cálculo está anotada para
+> saber cuándo volver a correr el script.
 
 ## 8. Limitaciones conocidas (activas al momento de escribir esto)
 
