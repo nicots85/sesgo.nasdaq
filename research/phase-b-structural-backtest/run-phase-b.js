@@ -38,6 +38,32 @@ function pctChange(curr, prev) {
   return ((curr - prev) / prev) * 100;
 }
 
+/**
+ * Sub-score estructural AISLADO: re-pondera SOLO los factores de mercado
+ * estructurales, excluyendo explícitamente "Caja overnight" y "Noticias
+ * (IA)" (y "Momentum Nasdaq", que no debería existir desde la Fase 1.5,
+ * por las dudas).
+ *
+ * POR QUÉ EXISTE: Fase B testea si el score predice el retorno del Nasdaq.
+ * Si usáramos bias.score (el score COMPLETO de calculateBias), "Caja
+ * overnight" entra con su peso de producción — y como su score es una
+ * CONSTANTE (hoy: fallback de 56.7%, score 13.4, peso 0.85), domina el
+ * valor y hasta el SIGNO del score compuesto. Sumar una constante no cambia
+ * el coeficiente de Pearson (por eso la correlación seguía "funcionando"),
+ * pero sí fija el signo y rompe la tasa de acierto direccional. Como la
+ * Caja tiene su propio backtest independiente (box-capture.js), Fase B debe
+ * medir lo que no está cubierto por esa Caja — y debe hacerlo SIN importar
+ * qué peso tenga la Caja en producción. Si en el futuro Caja vuelve a
+ * cambiar de peso, Fase B no debe enterarse.
+ */
+function extractStructuralScore(biasFactors) {
+  const EXCLUIDOS = ['Caja overnight', 'Noticias (IA)', 'Momentum Nasdaq'];
+  const incluidos = biasFactors.filter(f => !EXCLUIDOS.includes(f.name));
+  const totalScore = incluidos.reduce((sum, f) => sum + f.score * f.weight, 0);
+  const totalWeight = incluidos.reduce((sum, f) => sum + f.weight, 0);
+  return totalWeight > 0 ? totalScore / totalWeight : 0;
+}
+
 async function runPhaseB(fetchFn = fetchAllAligned) {
   console.log('=== FASE B: Backtest del sub-score estructural ===\n');
 
@@ -113,7 +139,7 @@ async function runPhaseB(fetchFn = fetchAllAligned) {
 
     records.push({
       date: dToday,
-      structuralScore: bias.score,
+      structuralScore: extractStructuralScore(bias.factors),
       nasdaqReturnPct: nasdaqReturn,
     });
   }
@@ -200,4 +226,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runPhaseB, fearGreedFromVix };
+module.exports = { runPhaseB, fearGreedFromVix, extractStructuralScore };

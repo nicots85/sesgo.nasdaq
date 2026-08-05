@@ -50,12 +50,12 @@ function run() {
 
   const cajaA = biasA.factors.find(f => f.name === 'Caja overnight');
   assert(cajaA, 'Caso A: debería existir el factor "Caja overnight"');
-  assert(cajaA.weight === 0.50,
-    `Caso A: "Caja overnight" debería tener weight 0.50, tiene ${cajaA.weight}`);
+  assert(cajaA.weight === 0.85,
+    `Caso A: "Caja overnight" debería tener weight 0.85, tiene ${cajaA.weight}`);
 
-  // Total esperado con ambos cointegrados:
-  // Caja 0.50 + VIX 0.10 + DXY 0.08 + USD/JPY 0.08 + Nikkei 0.06 +
-  // KOSPI 0.05 + S&P500 0.06 + WTI 0.04 + Noticias 0.13 = 1.10
+  // Total esperado con ambos cointegrados (tras re-ponderación Fase 2):
+  // Caja 0.85 + VIX 0.01 + DXY 0.01 + USD/JPY 0.01 + Nikkei 0.06 +
+  // KOSPI 0.01 + S&P500 0.01 + WTI 0.01 + Noticias 0.13 = 1.10
   const TOTAL_COINTEGRADOS = 1.10;
   const sumA = sumWeights(biasA.factors);
   assert(Math.abs(sumA - TOTAL_COINTEGRADOS) < 1e-9,
@@ -69,12 +69,12 @@ function run() {
     `Caso B: 'Fear & Greed' NO debería estar en bias.factors, está`);
 
   const cajaB = biasB.factors.find(f => f.name === 'Caja overnight');
-  assert(cajaB.weight === 0.50,
-    `Caso B: "Caja overnight" debería tener weight 0.50, tiene ${cajaB.weight}`);
+  assert(cajaB.weight === 0.85,
+    `Caso B: "Caja overnight" debería tener weight 0.85, tiene ${cajaB.weight}`);
 
   // Total esperado sin cointegración:
-  // 1.10 - Nikkei (0.06→0.01) - KOSPI (0.05→0.01) = 1.10 - 0.05 - 0.04 = 1.01
-  const TOTAL_SIN_COINTEGRACION = 1.01;
+  // 1.10 - Nikkei (0.06→0.01) = 1.05
+  const TOTAL_SIN_COINTEGRACION = 1.05;
   const sumB = sumWeights(biasB.factors);
   assert(Math.abs(sumB - TOTAL_SIN_COINTEGRACION) < 1e-9,
     `Caso B: la suma de pesos debería ser ${TOTAL_SIN_COINTEGRACION}, dio ${sumB}`);
@@ -87,7 +87,7 @@ function run() {
     console.log(`  ${f.name.padEnd(20)} weight=${f.weight}`);
   }
   console.log('');
-  console.log(`OK: 'Fear & Greed' y 'Momentum Nasdaq' eliminados, 'Caja overnight' en 0.50, ` +
+  console.log(`OK: 'Fear & Greed' y 'Momentum Nasdaq' eliminados, 'Caja overnight' en 0.85, ` +
     `suma de pesos correcta (${TOTAL_COINTEGRADOS} cointegrados / ${TOTAL_SIN_COINTEGRACION} sin cointegración).`);
 }
 

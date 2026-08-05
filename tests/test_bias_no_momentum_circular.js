@@ -35,8 +35,8 @@ function run() {
 
   const caja = bias.factors.find(f => f.name === 'Caja overnight');
   assert(caja, 'debería existir el factor "Caja overnight"');
-  assert(caja.weight === 0.50,
-    `"Caja overnight" debería tener weight 0.50, tiene ${caja.weight}`);
+  assert(caja.weight === 0.85,
+    `"Caja overnight" debería tener weight 0.85, tiene ${caja.weight}`);
 
   // El dato de Nasdaq en vivo debe seguir disponible, pero FUERA de factors
   const respMarket = buildMarketResponse(market);
@@ -52,8 +52,9 @@ function run() {
   assert(!usaNasdaq, 'ningún factor ponderado debería usar el cambio del Nasdaq (2.78) como raw');
 
   // Suma de pesos esperada: con Nikkei/KOSPI cointegrados
-  // Caja 0.50 + VIX 0.10 + DXY 0.08 + USD/JPY 0.08 + Nikkei 0.06 +
-  // KOSPI 0.05 + S&P500 0.06 + WTI 0.04 + Noticias 0.13 = 1.10
+  // Total esperado con ambos cointegrados (tras re-ponderación Fase 2):
+  // Caja 0.85 + VIX 0.01 + DXY 0.01 + USD/JPY 0.01 + Nikkei 0.06 +
+  // KOSPI 0.01 + S&P500 0.01 + WTI 0.01 + Noticias 0.13 = 1.10
   const TOTAL_COINTEGRADOS = 1.10;
   const suma = bias.factors.reduce((acc, f) => acc + f.weight, 0);
   assert(Math.abs(suma - TOTAL_COINTEGRADOS) < 1e-9,
@@ -68,7 +69,7 @@ function run() {
   console.log('');
   console.log(`market.nasdaqLive: { price: ${respMarket.nasdaqLive.price}, change: ${respMarket.nasdaqLive.change} }`);
   console.log('');
-  console.log(`OK: 'Momentum Nasdaq' eliminado del cálculo (circular), 'Caja overnight' en 0.50, ` +
+  console.log(`OK: 'Momentum Nasdaq' eliminado del cálculo (circular), 'Caja overnight' en 0.85, ` +
     `y el Nasdaq en vivo sigue en market.nasdaqLive fuera de factors.`);
 }
 

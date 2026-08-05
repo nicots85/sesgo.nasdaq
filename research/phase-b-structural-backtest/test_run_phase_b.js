@@ -2,39 +2,40 @@ const assert = require('assert');
 const { runPhaseB } = require('./run-phase-b');
 
 /**
- * Genera un dataset sintético de N días donde el VIX alterna entre
- * "bajo" (12) y "alto" (28) cada pocos días, y el retorno de Nasdaq del
- * día siguiente está diseñado para reaccionar a ese VIX del día
- * anterior: VIX bajo ayer → Nasdaq sube fuerte hoy; VIX alto ayer →
- * Nasdaq baja fuerte hoy. El resto de los factores se mantiene neutro
- * (sin señal) para no contaminar la prueba.
+ * Genera un dataset sintético de N días donde el NIKKEI (el único factor
+ * estructural con peso real tras la re-ponderación de Fase 2, 0.06)
+ * alterna entre subidas y bajadas fuertes en bloques, y el retorno de
+ * Nasdaq del MISMO día sigue al Nikkei (señal de pre-market asiático,
+ * legítima con la regla de lag 'change-D'). El resto de los factores se
+ * mantiene neutro (sin señal) para no contaminar la prueba.
+ *
+ * Nasdaq y Nikkei se construyen con una relación lineal (cointegración)
+ * para que Nikkei tenga su peso completo (0.06) en el sub-score
+ * estructural.
  */
 function buildSyntheticDataset(nDays = 200) {
   const dates = [];
   const byDate = {};
+  let nikkeiPrice = 30000;
   let nasdaqPrice = 20000;
-  let vix = 15;
 
   for (let i = 0; i < nDays; i++) {
     const date = `2024-01-${String((i % 28) + 1).padStart(2, '0')}-${Math.floor(i / 28)}`; // fechas únicas, no necesitan ser reales
     dates.push(date);
 
-    // VIX alterna en bloques de 5 días
-    vix = Math.floor(i / 5) % 2 === 0 ? 12 : 28;
-
-    // El retorno de Nasdaq de HOY reacciona al VIX de AYER (lag 1)
-    // — esto es lo que el pipeline con lag debería lograr detectar.
-    const prevVix = i === 0 ? 15 : byDate[dates[i - 1]].vix;
-    const drift = prevVix < 20 ? 0.012 : -0.012; // +1.2% o -1.2% diario, señal fuerte a propósito
-    const noise = (Math.random() - 0.5) * 0.002; // ruido chico
-    nasdaqPrice = nasdaqPrice * (1 + drift + noise);
+    // Nikkei sube/baja en bloques de 5 días (+1.5% / -1.5% diario, señal fuerte)
+    const drift = Math.floor(i / 5) % 2 === 0 ? 0.015 : -0.015;
+    const noise = (Math.random() - 0.5) * 0.001;
+    nikkeiPrice = nikkeiPrice * (1 + drift + noise);
+    // Nasdaq sigue al Nikkei el mismo día (relación lineal → cointegración)
+    nasdaqPrice = nikkeiPrice * 0.6667 + (Math.random() - 0.5) * 5;
 
     byDate[date] = {
-      nikkei: 30000 + Math.random() * 10, // sin señal (ruido puro)
-      kospi: 2500 + Math.random() * 10,   // sin señal
+      nikkei: nikkeiPrice,
       nasdaq: nasdaqPrice,
+      vix: 15 + Math.random() * 5,       // sin señal (ruido puro)
+      kospi: 2500 + Math.random() * 10,   // sin señal
       sp500: 5000 + Math.random() * 10,   // sin señal
-      vix,
       dxy: 100 + Math.random() * 0.1,     // sin señal
       usdjpy: 150 + Math.random() * 0.1,  // sin señal
       wti: 75 + Math.random() * 0.1,      // sin señal
@@ -58,15 +59,18 @@ async function run() {
   // Con una señal tan fuerte y diseñada a propósito, el pipeline TIENE
   // que detectarla como significativa — si esto falla, hay un bug real
   // en la lógica de lag o en la integración con calculateBias.
+  // Ojo: la señal viene del NIKKEI (peso 0.06, único estructural con
+  // peso real tras la Fase 2), no del VIX (que bajó a 0.01 por no
+  // pasar Bonferroni). El VIX ya no puede mover el sub-score estructural.
   assert(resultado.correlacionScoreVsRetorno.r > 0.3,
-    `esperaba correlación positiva fuerte (VIX bajo ayer → score alcista → Nasdaq sube hoy), dio r=${resultado.correlacionScoreVsRetorno.r}`);
+    `esperaba correlación positiva fuerte (Nikkei sube → Nasdaq sube), dio r=${resultado.correlacionScoreVsRetorno.r}`);
   assert(resultado.correlacionScoreVsRetorno.significativo,
     `esperaba que la correlación fuera estadísticamente significativa con esta señal tan fuerte, dio p=${resultado.correlacionScoreVsRetorno.pValue}`);
   assert(resultado.tasaAciertoDireccional.pct > 70,
     `esperaba una tasa de acierto alta (>70%) con una señal tan fuerte, dio ${resultado.tasaAciertoDireccional.pct}%`);
 
-  console.log('\nOK: el pipeline de Fase B detecta correctamente una señal fuerte diseñada de antemano (VIX bajo ayer → Nasdaq sube hoy).');
-  console.log('Esto confirma que la lógica de lag anti-look-ahead y la integración con calculateBias funcionan.');
+  console.log('\nOK: el pipeline de Fase B detecta correctamente una señal fuerte diseñada de antemano (Nikkei sube → Nasdaq sube).');
+  console.log('Esto confirma que la lógica de lag anti-look-ahead, extractStructuralScore() y la integración con calculateBias funcionan.');
 }
 
 run().catch(e => {

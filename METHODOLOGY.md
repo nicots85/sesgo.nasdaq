@@ -35,17 +35,31 @@ El resultado se redondea al entero más cercano.
 
 ## 3. Los 9 factores, en detalle
 
+> **PESOS VIGENTES (desde Fase 2, agosto 2026):** los pesos de la tabla
+> fueron re-ponderados automáticamente con el resultado del test factor
+> por factor (ver sección 10 y `research/.../RESULTADOS_POR_FACTOR.md`).
+> Solo **Nikkei** pasó la corrección de Bonferroni (p=0.0009). Todos los
+> demás estructurales bajaron al piso 0.01, y el peso liberado (0.35) se
+> reasignó completo a Caja overnight (0.85).
+
 | # | Factor | Qué mide (`raw`) | Peso | Cómo se calcula el score |
 |---|--------|-------------------|------|---------------------------|
-| 1 | Caja overnight | % de veces que una ruptura alcista del rango overnight continuó (backtest propio, ver `box-capture.js`) | **0.50** | `(pctContinuación - 50) × 2` — 50% = score 0 (neutro), 100% = score 100 |
-| 2 | VIX | Nivel del índice VIX | 0.10 | Escalones: <15→+80, <17→+50, <20→+10, <25→-50, ≥25→-80 |
-| 3 | DXY (Dólar) | Nivel del índice dólar (proxy) | 0.08 | Escalones: <99→+60, <102→+10, <104→-30, ≥104→-60 |
-| 4 | USD/JPY | % de cambio del día | 0.08 | Escalones: >1%→+50, >0.3%→+20, <-1.5%→-80, <-0.5%→-40, resto→0 |
-| 5 | Nikkei | % de cambio del día | **0.06 o 0.01** (ver sección 4) | Solo si cointegrado con Nasdaq: >1%→+60, >0%→+30, <-1%→-60, <0%→-30. Si no cointegrado: **0** |
-| 6 | KOSPI | % de cambio del día | **0.05 o 0.01** (ver sección 4) | Misma lógica que Nikkei |
-| 7 | S&P 500 | % de cambio del día | 0.06 | Escalones: >1%→+50, >0.3%→+20, <-1%→-50, <-0.3%→-20, resto→0 |
-| 8 | Crudo (WTI) | Precio en USD | 0.04 | Escalones: >100→-50, >85→-20, >70→-10, ≥60→+15, <60→+40 |
-| 9 | Noticias (IA) | Score de sentimiento (-100 a +100) de Groq/Llama 3.3 sobre RSS + NewsAPI | 0.13 | Se usa directo, acotado a [-100, 100] |
+| 1 | Caja overnight | % de veces que una ruptura alcista del rango overnight continuó (backtest propio, ver `box-capture.js`) | **0.85** | `scoreCaja`: `(pctContinuación - 50) × 2` — 50% = score 0 (neutro), 100% = score 100 |
+| 2 | VIX | Nivel del índice VIX | 0.01 | `scoreVix`: <15→+80, <17→+50, <20→+10, <25→-50, ≥25→-80 |
+| 3 | DXY (Dólar) | Nivel del índice dólar (proxy) | 0.01 | `scoreDxy`: <99→+60, <102→+10, <104→-30, ≥104→-60 |
+| 4 | USD/JPY | % de cambio del día | 0.01 | `scoreUsdjpy`: >1%→+50, >0.3%→+20, <-1.5%→-80, <-0.5%→-40, resto→0 |
+| 5 | Nikkei | % de cambio del día | **0.06 o 0.01** (ver sección 5) | `scoreNikkei(chg, coint)`: solo si cointegrado: >1%→+60, >0%→+30, <-1%→-60, <0%→-30. Si no cointegrado: **0** |
+| 6 | KOSPI | % de cambio del día | 0.01 | `scoreKospi(chg, coint)`: misma lógica que Nikkei |
+| 7 | S&P 500 | % de cambio del día | 0.01 | `scoreSp500`: >1%→+50, >0.3%→+20, <-1%→-50, <-0.3%→-20, resto→0 |
+| 8 | Crudo (WTI) | Precio en USD | 0.01 | `scoreWti`: >100→-50, >85→-20, >70→-10, ≥60→+15, <60→+40 |
+| 9 | Noticias (IA) | Score de sentimiento (-100 a +100) de Groq/Llama 3.3 sobre RSS + NewsAPI | 0.13 | `scoreNoticias`: se usa directo, acotado a [-100, 100] |
+
+> **Regla de re-ponderación (Fase 2):** cada regla de scoring vive como
+> función pura exportada en `api/bias.js` (`scoreVix`, `scoreDxy`, ...) y
+> se reutiliza en el backtest — no hay dos versiones de ninguna regla. Los
+> pesos se reasignan por evidencia: si el test factor por factor (Bonferroni
+> 0.05/7) muestra que un factor no tiene edge, su peso baja al piso 0.01 y el
+> peso liberado va completo a Caja overnight.
 
 > **¿Por qué ya no hay "Fear & Greed"?** Hasta la Fase 1, el índice
 > ponderaba "VIX" (peso 0.10) y "Fear & Greed" (peso 0.05) como dos
@@ -88,39 +102,44 @@ score** a propósito. El frontend los muestra como "estado actual":
   compatibilidad con el frontend; la variación "oficial" informativa es
   `market.nasdaqLive`).
 
-## 5. El caso especial de Nikkei y KOSPI: peso condicional
+## 5. El caso especial de Nikkei y KOSPI
 
-A diferencia de los otros 7 factores, Nikkei y KOSPI **cambian de peso
-según el resultado de un test de cointegración** (Engle-Granger, ver
-`lib/stats.js`) contra Nasdaq, calculado ese mismo día con los datos
-disponibles:
+**Nikkei** es el único estructural que pasó la re-ponderación de la Fase 2
+(p=0.0009), así que conserva peso **condicional a cointegración**
+(Engle-Granger, ver `lib/stats.js`), calculada ese mismo día:
 
-- **Si están cointegrados** (`isCointegrated: true`): peso completo
-  (0.06 Nikkei, 0.05 KOSPI) y su score refleja su movimiento del día.
-- **Si NO están cointegrados**: peso baja a 0.01 (casi no cuentan) y su
-  score se fuerza a 0, sin importar cuánto se hayan movido.
+- **Si está cointegrado** (`isCointegrated: true`): peso **0.06** y su
+  score refleja su movimiento del día.
+- **Si NO está cointegrado**: peso baja a 0.01 y su score se fuerza a 0.
+
+**KOSPI NO pasó la Fase 2** (p=0.0136, umbral 0.0071): su peso es fijo en
+el piso **0.01** (el score sigue con la misma lógica de umbrales, pero su
+influencia en el score final es mínima). Ya no "cambia de peso" según
+cointegración.
 
 **Por qué importa esto:** el informe de auditoría externa asumió pesos
-fijos de 0.06/0.05 porque el día que lo generaron ambos estaban
-cointegrados. Otro día, con cointegración distinta, la tabla de
-contribuciones cambia — esto es esperado, no un error.
+fijos de 0.06/0.05 para ambos porque el día que lo generaron estaban
+cointegrados. Otro día, con cointegración distinta, solo el peso de Nikkei
+cambia — esto es esperado, no un error.
 
-## 6. Los pesos NO están optimizados estadísticamente
+## 6. Los pesos se derivan de la evidencia (Fase 2)
 
-Esto hay que decirlo sin vueltas: los 9 pesos (0.50, 0.10, 0.08...) son
-**asignados por criterio propio** (cuánta importancia le damos a cada
-factor en la práctica de trading), no el resultado de una regresión, un
-modelo de optimización, ni ningún proceso estadístico que los derive de
-datos históricos. El peso de 0.50 en "Caja overnight" refleja que es el
-factor en el que más confiamos, no que un modelo haya demostrado que
-explica el 50% de la varianza del movimiento del Nasdaq.
+Antes de la Fase 2, los 9 pesos eran asignados por criterio propio (0.50,
+0.10, 0.08...). Desde la Fase 2, la re-ponderación es **automática y
+objetiva**: cada factor estructural se testeó aislado contra el retorno del
+Nasdaq (388 días, Bonferroni 0.05/7 ≈ 0.0071) y el peso se ajustó según el
+resultado:
 
-Esta es precisamente la pregunta que la **Fase B** (backtest retroactivo
-parcial, en curso) busca empezar a responder: ¿el score, tal como está
-ponderado hoy, predice algo real? Hasta que ese backtest exista, el
-índice debe leerse como **una síntesis organizada de la opinión experta
-del autor sobre qué mirar cada mañana**, no como un modelo validado
-estadísticamente.
+- Pasa Bonferroni → mantiene su peso (solo Nikkei, p=0.0009 → 0.06).
+- No pasa → baja al piso 0.01 (KOSPI, VIX, DXY, USD/JPY, WTI, S&P 500).
+- El peso liberado (0.35) se reasigna **completo** a Caja overnight
+  (0.50 → **0.85**), el único factor con evidencia fuerte ya validada en la
+  Fase B original.
+
+El score sigue siendo **una síntesis organizada de evidencia**, no un
+modelo predictivo validado a futuro: el test factor por factor (ver
+`research/.../RESULTADOS_POR_FACTOR.md`) es la mejor evidencia disponible
+sobre 388 días, no una garantía.
 
 ## 7. Umbrales de la etiqueta final
 
@@ -134,7 +153,7 @@ estadísticamente.
 
 ## 8. Limitaciones conocidas (activas al momento de escribir esto)
 
-- **Caja overnight (peso 0.50, el factor más pesado)**: hasta que se
+- **Caja overnight (peso 0.85, el factor más pesado)**: hasta que se
   acumulen 30 días hábiles de historial real vía `box-capture.js`, usa
   un valor de referencia fijo de un backtest manual de 515 días
   (56.7% de continuación). Se actualiza solo una vez alcanzado ese
@@ -166,12 +185,12 @@ estadísticamente.
 
 1. ✅ **Fase A (este documento)**: transparencia total de la
    metodología actual.
-2. 🔄 **Fase B**: backtest retroactivo del sub-score estructural
-   (todo excepto Noticias y Caja overnight, que ya tiene su propio
-   backtest independiente) contra movimientos reales del Nasdaq,
-   usando 1-2 años de datos diarios. La **Fase 2** extiende esto a un
-   test **factor por factor** (7 estructurales + el candidato "Nasdaq
-   momentum lag-1", 8 en total) para ver qué factores tienen edge real.
+2. ✅ **Fase B**: backtest retroactivo del sub-score estructural contra
+   movimientos reales del Nasdaq (388 días). Incluye la **Fase 2**: test
+   factor por factor (7 estructurales + el candidato "Nasdaq momentum
+   lag-1") → solo Nikkei pasa Bonferroni; el resto bajó a piso 0.01 y el
+   peso liberado fue a Caja overnight. Resultados completos en
+   `research/.../RESULTADOS_POR_FACTOR.md`.
 3. ⏳ **Fase C**: desde ahora, guardar el score completo (los 9
    factores, con noticias incluidas) todos los días, para construir un
    track record real de la fórmula completa a lo largo del tiempo.

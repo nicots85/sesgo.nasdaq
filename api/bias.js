@@ -20,6 +20,39 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, timeout]);
 }
 
+// --- Reglas de scoring PURAS (raw → score) ------------------------------
+// Exportadas para que el backtest de Fase 2 (test factor por factor) y
+// cualquier otra herramienta reutilicen EXACTAMENTE las mismas reglas
+// que producción. No debe existir una segunda versión de ninguna regla.
+function scoreCaja(pctContinuacion) {
+  return (pctContinuacion - 50) * 2; // 50% = neutro (score 0), 100% = score 100
+}
+function scoreVix(vixPrice) {
+  return vixPrice < 15 ? 80 : vixPrice < 17 ? 50 : vixPrice < 20 ? 10 : vixPrice < 25 ? -50 : -80;
+}
+function scoreDxy(dxyPrice) {
+  return dxyPrice < 99 ? 60 : dxyPrice < 102 ? 10 : dxyPrice < 104 ? -30 : -60;
+}
+function scoreUsdjpy(usdjpyChg) {
+  return usdjpyChg > 1 ? 50 : usdjpyChg > 0.3 ? 20 : usdjpyChg < -1.5 ? -80 : usdjpyChg < -0.5 ? -40 : 0;
+}
+function scoreNikkei(nikkeiChg, cointegrated) {
+  if (!cointegrated) return 0;
+  return nikkeiChg > 1 ? 60 : nikkeiChg > 0 ? 30 : nikkeiChg < -1 ? -60 : nikkeiChg < 0 ? -30 : 0;
+}
+function scoreKospi(kospiChg, cointegrated) {
+  return scoreNikkei(kospiChg, cointegrated); // misma lógica que Nikkei
+}
+function scoreSp500(sp500Chg) {
+  return sp500Chg > 1 ? 50 : sp500Chg > 0.3 ? 20 : sp500Chg < -1 ? -50 : sp500Chg < -0.3 ? -20 : 0;
+}
+function scoreWti(wtiPrice) {
+  return wtiPrice > 100 ? -50 : wtiPrice > 85 ? -20 : wtiPrice > 70 ? -10 : wtiPrice >= 60 ? 15 : 40;
+}
+function scoreNoticias(newsScore) {
+  return Math.max(-100, Math.min(100, newsScore));
+}
+
 function calculateBias(market, correlations, newsAnalysis, boxSummary) {
   const vixPrice = market.vix?.price || 20;
   const dxyPrice = market.dxy?.price || 101;
@@ -41,7 +74,7 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
   const FALLBACK_PCT_CONTINUACION = 56.7;
   const FALLBACK_LABEL = 'Backtest manual de referencia (515 días, no se actualiza solo)';
 
-  let cajaDescripcion, cajaScore, cajaRaw;
+  let cajaDescripcion, cajaRaw;
   if (boxSummary && boxSummary.overnight?.alcista?.n >= 15) {
     // Usamos la rama alcista como referencia principal del score (misma
     // convención que el resto de los factores: score alto = bullish).
@@ -49,41 +82,57 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
     // este es el lugar para hacerlo.
     const alc = boxSummary.overnight.alcista;
     cajaRaw = alc.pctContinuacion;
-    cajaScore = (alc.pctContinuacion - 50) * 2; // 50% = neutro (score 0), 100% = score 100
     cajaDescripcion = `Backtest dinámico ${boxSummary.nDiasAcumulados} días: ruptura alcista continúa ${alc.pctContinuacion}% (${alc.magnitudMediaContinuacionPct ?? '—'}% prom)`;
   } else {
     cajaRaw = FALLBACK_PCT_CONTINUACION;
-    cajaScore = (FALLBACK_PCT_CONTINUACION - 50) * 2;
     cajaDescripcion = FALLBACK_LABEL;
   }
 
+  // =====================================================================
+  // PESOS FASE 2 — re-ponderación automática por test factor por factor
+  // (run-phase-b-per-factor.js, 388 días, Bonferroni 0.05/7 ≈ 0.0071).
+  // Resultado real (r | p crudo | pasa Bonferroni):
+  //   Nikkei    0.168 | 0.0009 | SÍ  → mantiene 0.06 (condicional por cointegración)
+  //   KOSPI     0.125 | 0.0136 | no  → baja a piso 0.01
+  //   VIX      -0.110 | 0.0298 | no  → baja a piso 0.01
+  //   DXY       0.069 | 0.1734 | no  → baja a piso 0.01
+  //   USD/JPY  -0.058 | 0.2533 | no  → baja a piso 0.01
+  //   WTI      -0.021 | 0.6864 | no  → baja a piso 0.01
+  //   S&P 500  -0.004 | 0.9412 | no  → baja a piso 0.01
+  // Peso liberado total: VIX 0.09 + DXY 0.07 + USD/JPY 0.07 + KOSPI 0.04
+  //   + S&P 0.05 + WTI 0.03 = 0.35 → se reasigna COMPLETO a "Caja
+  //   overnight" (único factor con evidencia fuerte ya validada en Fase B):
+  //   0.50 + 0.35 = 0.85.
+  // Noticias (IA) mantiene 0.13: sin historial reconstruible, no testable
+  // en el backtest retroactivo (ver METHODOLOGY sección 8).
+  // =====================================================================
   const factors = [
     {
       name: 'Caja overnight',
       description: cajaDescripcion,
-      score: cajaScore,
-      weight: 0.50,
+      score: scoreCaja(cajaRaw),
+      weight: 0.85,
       raw: cajaRaw
     },
     {
       name: 'VIX',
       description: vixPrice < 15 ? 'Mercado tranquilo' : vixPrice < 20 ? 'Elevado' : vixPrice < 25 ? 'Alta volatilidad' : 'Crisis',
-      score: vixPrice < 15 ? 80 : vixPrice < 17 ? 50 : vixPrice < 20 ? 10 : vixPrice < 25 ? -50 : -80,
-      weight: 0.10,
+      score: scoreVix(vixPrice),
+      weight: 0.01,
       raw: vixPrice
     },
     {
       name: 'DXY (Dólar)',
       description: dxyPrice < 99 ? 'Dólar débil (bueno para Nasdaq)' : dxyPrice < 102 ? 'Dólar neutro' : dxyPrice < 104 ? 'Dólar fuerte (presión)' : 'Dólar muy fuerte (riesgo)',
-      score: dxyPrice < 99 ? 60 : dxyPrice < 102 ? 10 : dxyPrice < 104 ? -30 : -60,
-      weight: 0.08,
+      score: scoreDxy(dxyPrice),
+      weight: 0.01,
       raw: dxyPrice
     },
     {
       name: 'USD/JPY',
       description: usdjpyChg > 0.5 ? 'Yen débil (carry trade activo)' : usdjpyChg < -1 ? 'Yen fortaleciéndose (riesgo)' : 'Estable',
-      score: usdjpyChg > 1 ? 50 : usdjpyChg > 0.3 ? 20 : usdjpyChg < -1.5 ? -80 : usdjpyChg < -0.5 ? -40 : 0,
-      weight: 0.08,
+      score: scoreUsdjpy(usdjpyChg),
+      weight: 0.01,
       raw: usdjpyChg
     },
     {
@@ -91,8 +140,8 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
       description: nikkeiCoint
         ? `Cointegrado con Nasdaq: ${nikkeiChg > 0 ? 'sube' : 'baja'} → señal directa`
         : 'Sin relación estructural con Nasdaq',
-      score: nikkeiCoint ? (nikkeiChg > 1 ? 60 : nikkeiChg > 0 ? 30 : nikkeiChg < -1 ? -60 : nikkeiChg < 0 ? -30 : 0) : 0,
-      weight: nikkeiCoint ? 0.06 : 0.01,
+      score: scoreNikkei(nikkeiChg, nikkeiCoint),
+      weight: nikkeiCoint ? 0.06 : 0.01, // PASA Bonferroni (p=0.0009) → mantiene peso
       raw: nikkeiChg,
       cointegrated: nikkeiCoint
     },
@@ -101,29 +150,29 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
       description: kospiCoint
         ? `Cointegrado con Nasdaq: ${kospiChg > 0 ? 'sube' : 'baja'} → señal directa`
         : 'Sin relación estructural con Nasdaq',
-      score: kospiCoint ? (kospiChg > 1 ? 60 : kospiChg > 0 ? 30 : kospiChg < -1 ? -60 : kospiChg < 0 ? -30 : 0) : 0,
-      weight: kospiCoint ? 0.05 : 0.01,
+      score: scoreKospi(kospiChg, kospiCoint),
+      weight: 0.01, // NO pasa Bonferroni (p=0.0136) → piso mínimo 0.01
       raw: kospiChg,
       cointegrated: kospiCoint
     },
     {
       name: 'S&P 500',
       description: sp500Chg > 0.5 ? 'Mercado subiendo' : sp500Chg < -0.5 ? 'Mercado bajando' : 'Plano',
-      score: sp500Chg > 1 ? 50 : sp500Chg > 0.3 ? 20 : sp500Chg < -1 ? -50 : sp500Chg < -0.3 ? -20 : 0,
-      weight: 0.06,
+      score: scoreSp500(sp500Chg),
+      weight: 0.01, // NO pasa Bonferroni (p=0.9412) → piso mínimo 0.01
       raw: sp500Chg
     },
     {
       name: 'Crudo (WTI)',
       description: wtiPrice < 65 ? 'Energía barata (positivo)' : wtiPrice > 90 ? 'Energía cara (inflación)' : wtiPrice > 75 ? 'Elevado (presión inflación)' : 'Normal',
-      score: wtiPrice > 100 ? -50 : wtiPrice > 85 ? -20 : wtiPrice > 70 ? -10 : wtiPrice >= 60 ? 15 : 40,
-      weight: 0.04,
+      score: scoreWti(wtiPrice),
+      weight: 0.01, // NO pasa Bonferroni (p=0.6864) → piso mínimo 0.01
       raw: wtiPrice
     },
     {
       name: 'Noticias (IA)',
       description: newsScore > 20 ? 'Sentimiento positivo' : newsScore < -20 ? 'Sentimiento negativo' : 'Neutral',
-      score: Math.max(-100, Math.min(100, newsScore)),
+      score: scoreNoticias(newsScore),
       weight: 0.13,
       raw: newsScore
     }
@@ -306,3 +355,12 @@ module.exports.buildMarketResponse = buildMarketResponse;
 module.exports.detectAlerts = detectAlerts;
 module.exports.loadHistoricalPrices = loadHistoricalPrices;
 module.exports.saveHistoricalPrices = saveHistoricalPrices;
+module.exports.scoreCaja = scoreCaja;
+module.exports.scoreVix = scoreVix;
+module.exports.scoreDxy = scoreDxy;
+module.exports.scoreUsdjpy = scoreUsdjpy;
+module.exports.scoreNikkei = scoreNikkei;
+module.exports.scoreKospi = scoreKospi;
+module.exports.scoreSp500 = scoreSp500;
+module.exports.scoreWti = scoreWti;
+module.exports.scoreNoticias = scoreNoticias;
