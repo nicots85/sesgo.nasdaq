@@ -90,6 +90,72 @@ function labelFromScore(finalScore) {
   return { label: 'BAJISTA FUERTE', emoji: '🔴🔴' };
 }
 
+// =====================================================================
+// PESOS — re-ponderación por evidencia (Fase 2) con corrección
+// fallback-aware (FIX Fase 5).
+//
+// Pesos BASE (los que existían ANTES de la Fase 2):
+//   Caja overnight 0.50 | VIX 0.10 | DXY 0.08 | USD/JPY 0.08 |
+//   Nikkei 0.06 (coint) | KOSPI 0.05 | S&P 500 0.06 | WTI 0.04 |
+//   Noticias (IA) 0.13
+//
+// La Fase 2 bajó a piso 0.01 a los 6 que NO pasaron Bonferroni:
+//   liberado = (0.10−0.01)+(0.08−0.01)+(0.08−0.01)+(0.05−0.01)
+//            +(0.06−0.01)+(0.04−0.01) = 0.35
+//
+// FIX Fase 5: ese peso liberado SOLO se reasigna completo a Caja
+// overnight cuando Caja usa datos DINÁMICOS reales de box-capture.js
+// (>=15 días acumulados). Mientras Caja esté en modo FALLBACK (valor de
+// referencia fijo, constante), concentrar el 77% del peso en una
+// constante hace que el score casi no se mueva día a día — no es lo que
+// se busca. En fallback el liberado se reparte 50/50 entre Caja y Nikkei
+// (el único otro factor con evidencia real, superó Bonferroni).
+// =====================================================================
+const PESOS_BASE = {
+  caja: 0.50, vix: 0.10, dxy: 0.08, usdjpy: 0.08,
+  nikkei: 0.06, kospi: 0.05, sp500: 0.06, wti: 0.04, noticias: 0.13
+};
+const PISO_BONFERRONI = 0.01;
+const SIN_BONFERRONI = ['vix', 'dxy', 'usdjpy', 'kospi', 'sp500', 'wti'];
+
+function pesoLiberado() {
+  return SIN_BONFERRONI.reduce((acc, k) => acc + (PESOS_BASE[k] - PISO_BONFERRONI), 0); // 0.35
+}
+
+/**
+ * Calcula los pesos de Caja overnight y Nikkei según el modo de Caja y
+ * la cointegración de Nikkei. Evaluado en CADA request de /api/bias:
+ * cuando box-capture.js cruce el mínimo de 30 días, esta función pasa de
+ * modo fallback a modo dinámico automáticamente, sin intervención manual.
+ *
+ * @param {boolean} cajaDinamica  true si Caja usa datos dinámicos reales
+ *                                (boxSummary.overnight.alcista.n >= 15)
+ * @param {boolean} nikkeiCoint   true si Nikkei está cointegrado con Nasdaq
+ * @returns {{caja: number, nikkei: number, pesoLiberado: number}}
+ */
+function computeFase2Weights(cajaDinamica, nikkeiCoint) {
+  const lib = pesoLiberado();
+  const nikkeiBase = nikkeiCoint ? PESOS_BASE.nikkei : PISO_BONFERRONI;
+  let caja = PESOS_BASE.caja;
+  let nikkei = nikkeiBase;
+
+  if (cajaDinamica) {
+    // Regla ORIGINAL de la Fase 2: 100% del liberado a Caja (datos reales)
+    caja += lib;
+  } else if (nikkeiCoint) {
+    // Modo fallback: 50% a Caja, 50% a Nikkei → Caja 0.675, Nikkei 0.235
+    caja += lib * 0.5;
+    nikkei += lib * 0.5;
+  } else {
+    // Fallback + Nikkei SIN cointegración: Nikkei no tiene señal utilizable
+    // (su score es 0), darle peso liberado solo diluiría el score → queda
+    // todo en Caja. Edge case poco probable (Nikkei está cointegrado hoy).
+    caja += lib;
+  }
+
+  return { caja, nikkei, pesoLiberado: lib };
+}
+
 function calculateBias(market, correlations, newsAnalysis, boxSummary) {
   // Lectura con null-coalescing (??): si el dato falta, queda null y el
   // factor se marca disponible:false. NO usamos || porque el fallback
@@ -108,8 +174,9 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
   const nikkeiCoint = correlations.nikkei__nasdaq?.cointegration?.isCointegrated || false;
   const kospiCoint = correlations.kospi__nasdaq?.cointegration?.isCointegrated || false;
 
-  // KOSPI corrupto (Yahoo devuelve ^KS11 > 5000): market.js lo marca
-  // con _invalid:true y un valor estimado. Ese valor NO es un dato real.
+  // KOSPI corrupto (Yahoo devuelve ^KS11 fuera de todo rango plausible,
+  // ej. > 12000): market.js lo marca con _invalid:true y un valor
+  // estimado. Ese valor NO es un dato real.
   const kospiInvalid = market.kospi?._invalid === true;
 
   // Caja overnight: usamos el backtest dinámico (box-capture.js) si ya
@@ -120,8 +187,10 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
   const FALLBACK_PCT_CONTINUACION = 56.7;
   const FALLBACK_LABEL = 'Backtest manual de referencia (515 días, no se actualiza solo)';
 
+  const cajaDinamica = !!(boxSummary && boxSummary.overnight?.alcista?.n >= 15);
+
   let cajaDescripcion, cajaRaw;
-  if (boxSummary && boxSummary.overnight?.alcista?.n >= 15) {
+  if (cajaDinamica) {
     // Usamos la rama alcista como referencia principal del score (misma
     // convención que el resto de los factores: score alto = bullish).
     // Si en algún momento se quiere ponderar alcista y bajista juntos,
@@ -133,6 +202,11 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
     cajaRaw = FALLBACK_PCT_CONTINUACION;
     cajaDescripcion = FALLBACK_LABEL;
   }
+
+  // FIX Fase 5: pesos condicionales al modo de Caja (dinámico vs fallback).
+  // Evaluado en cada request → cuando box-capture.js cruce los 15 días, el
+  // sistema pasa solo a la regla original (100% del liberado a Caja).
+  const pesos = computeFase2Weights(cajaDinamica, nikkeiCoint);
 
   // =====================================================================
   // PESOS FASE 2 — re-ponderación automática por test factor por factor
@@ -146,9 +220,12 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
   //   WTI      -0.021 | 0.6864 | no  → baja a piso 0.01
   //   S&P 500  -0.004 | 0.9412 | no  → baja a piso 0.01
   // Peso liberado total: VIX 0.09 + DXY 0.07 + USD/JPY 0.07 + KOSPI 0.04
-  //   + S&P 0.05 + WTI 0.03 = 0.35 → se reasigna COMPLETO a "Caja
-  //   overnight" (único factor con evidencia fuerte ya validada en Fase B):
-  //   0.50 + 0.35 = 0.85.
+  //   + S&P 0.05 + WTI 0.03 = 0.35.
+  // FIX Fase 5 (condicional): el liberado va 100% a Caja overnight SOLO
+  //   cuando Caja usa datos dinámicos reales (computeFase2Weights con
+  //   cajaDinamica=true → 0.50+0.35 = 0.85). En modo fallback (constante)
+  //   se reparte 50/50: Caja 0.50+0.175 = 0.675, Nikkei 0.06+0.175 = 0.235
+  //   (Nikkei es el único otro factor con evidencia real).
   // Noticias (IA) mantiene 0.13: sin historial reconstruible, no testable
   // en el backtest retroactivo (ver METHODOLOGY sección 8).
   // =====================================================================
@@ -157,7 +234,7 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
       name: 'Caja overnight',
       description: cajaDescripcion,
       score: scoreCaja(cajaRaw),
-      weight: 0.85,
+      weight: pesos.caja,
       raw: cajaRaw,
       disponible: true // siempre disponible: boxSummary dinámico o valor de referencia fijo
     },
@@ -193,7 +270,7 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
           ? `Cointegrado con Nasdaq: ${nikkeiChg > 0 ? 'sube' : 'baja'} → señal directa`
           : 'Sin relación estructural con Nasdaq',
       score: nikkeiChg == null ? 0 : scoreNikkei(nikkeiChg, nikkeiCoint),
-      weight: nikkeiCoint ? 0.06 : 0.01, // PASA Bonferroni (p=0.0009) → mantiene peso
+      weight: pesos.nikkei, // PASA Bonferroni (p=0.0009) → mantiene peso (más liberado en fallback)
       raw: nikkeiChg,
       cointegrated: nikkeiCoint,
       disponible: nikkeiChg != null
@@ -258,7 +335,7 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
 
   const { label, emoji } = labelFromScore(finalScore);
 
-  return { score: finalScore, label, emoji, factors, factoresExcluidosPorDatoFaltante };
+  return { score: finalScore, label, emoji, factors, factoresExcluidosPorDatoFaltante, cajaModo: cajaDinamica ? 'dinamico' : 'fallback' };
 }
 
 function detectAlerts(bias, prevBias) {
@@ -443,3 +520,6 @@ module.exports.scoreWti = scoreWti;
 module.exports.scoreNoticias = scoreNoticias;
 module.exports.THRESHOLDS = THRESHOLDS;
 module.exports.labelFromScore = labelFromScore;
+module.exports.computeFase2Weights = computeFase2Weights;
+module.exports.PESOS_BASE = PESOS_BASE;
+module.exports.pesoLiberado = pesoLiberado;

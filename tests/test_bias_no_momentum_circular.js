@@ -27,7 +27,14 @@ function run() {
   const market = sampleMarket();
   const news = { overall_score: 25 };
 
-  const bias = calculateBias(market, cointegratedCorrelations(), news, null);
+  // boxSummary DINÁMICO (>= 15 días): Caja overnight con datos reales →
+  // regla original de Fase 2 (Caja recibe 100% del peso liberado = 0.85).
+  const boxDinamico = {
+    nDiasAcumulados: 40,
+    overnight: { alcista: { n: 40, pctContinuacion: 58, magnitudMediaContinuacionPct: 1.2 } }
+  };
+
+  const bias = calculateBias(market, cointegratedCorrelations(), news, boxDinamico);
 
   const names = bias.factors.map(f => f.name);
   assert(!names.includes('Momentum Nasdaq'),
@@ -69,7 +76,7 @@ function run() {
   console.log('');
   console.log(`market.nasdaqLive: { price: ${respMarket.nasdaqLive.price}, change: ${respMarket.nasdaqLive.change} }`);
   console.log('');
-  console.log(`OK: 'Momentum Nasdaq' eliminado del cálculo (circular), 'Caja overnight' en 0.85, ` +
+  console.log(`OK: 'Momentum Nasdaq' eliminado del cálculo (circular), 'Caja overnight' en 0.85 (modo dinámico), ` +
     `y el Nasdaq en vivo sigue en market.nasdaqLive fuera de factors.`);
 }
 

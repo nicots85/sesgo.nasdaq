@@ -46,11 +46,14 @@ El resultado se redondea al entero más cercano.
 > por factor (ver sección 10 y `research/.../RESULTADOS_POR_FACTOR.md`).
 > Solo **Nikkei** pasó la corrección de Bonferroni (p=0.0009). Todos los
 > demás estructurales bajaron al piso 0.01, y el peso liberado (0.35) se
-> reasignó completo a Caja overnight (0.85).
+> reasigna a Caja overnight de forma **condicional al modo** (Fase 5): en
+> modo dinámico Caja queda en 0.85; en modo fallback (valor de referencia
+> fijo) se reparte 50/50 con Nikkei → Caja 0.675 / Nikkei 0.235 (ver
+> sección 6b).
 
 | # | Factor | Qué mide (`raw`) | Peso | Cómo se calcula el score |
 |---|--------|-------------------|------|---------------------------|
-| 1 | Caja overnight | % de veces que una ruptura alcista del rango overnight continuó (backtest propio, ver `box-capture.js`) | **0.85** | `scoreCaja`: `(pctContinuación - 50) × 2` — 50% = score 0 (neutro), 100% = score 100 |
+| 1 | Caja overnight | % de veces que una ruptura alcista del rango overnight continuó (backtest propio, ver `box-capture.js`) | **0.675/0.85** (condicional al modo, ver 6b) | `scoreCaja`: `(pctContinuación - 50) × 2` — 50% = score 0 (neutro), 100% = score 100 |
 | 2 | VIX | Nivel del índice VIX | 0.01 | `scoreVix`: <15→+80, <17→+50, <20→+10, <25→-50, ≥25→-80 |
 | 3 | DXY (Dólar) | Nivel del índice dólar (proxy) | 0.01 | `scoreDxy`: <99→+60, <102→+10, <104→-30, ≥104→-60 |
 | 4 | USD/JPY | % de cambio del día | 0.01 | `scoreUsdjpy`: >1%→+50, >0.3%→+20, <-1.5%→-80, <-0.5%→-40, resto→0 |
@@ -65,7 +68,7 @@ El resultado se redondea al entero más cercano.
 > se reutiliza en el backtest — no hay dos versiones de ninguna regla. Los
 > pesos se reasignan por evidencia: si el test factor por factor (Bonferroni
 > 0.05/7) muestra que un factor no tiene edge, su peso baja al piso 0.01 y el
-> peso liberado va completo a Caja overnight.
+> peso liberado va a Caja overnight (condicional al modo, Fase 5, ver 6b).
 
 > **¿Por qué ya no hay "Fear & Greed"?** Hasta la Fase 1, el índice
 > ponderaba "VIX" (peso 0.10) y "Fear & Greed" (peso 0.05) como dos
@@ -138,14 +141,39 @@ resultado:
 
 - Pasa Bonferroni → mantiene su peso (solo Nikkei, p=0.0009 → 0.06).
 - No pasa → baja al piso 0.01 (KOSPI, VIX, DXY, USD/JPY, WTI, S&P 500).
-- El peso liberado (0.35) se reasigna **completo** a Caja overnight
-  (0.50 → **0.85**), el único factor con evidencia fuerte ya validada en la
-  Fase B original.
+- El peso liberado (0.35) se reasigna de forma **condicional al modo de la
+  Caja overnight** (ver Fase 5 más abajo).
 
 El score sigue siendo **una síntesis organizada de evidencia**, no un
 modelo predictivo validado a futuro: el test factor por factor (ver
 `research/.../RESULTADOS_POR_FACTOR.md`) es la mejor evidencia disponible
 sobre 388 días, no una garantía.
+
+### 6b. Fase 5 — re-ponderación condicional al modo de la Caja (fallback-aware)
+
+La Caja overnight tiene dos modos (ver sección 3): con historial dinámico
+suficiente usa el backtest en vivo; sin él cae a un **valor de referencia
+fijo** (56.7%, backtest manual de 515 días). El gate real de días lo pone
+`box-capture.js`: `getBoxSummary()` devuelve resumen solo con **30 días**
+acumulados; en `api/bias.js` hay además una salvaguarda defensiva
+(`boxSummary.overnight.alcista.n >= 15`) que nunca es limitante en la
+práctica porque el resumen ya viene filtrado.
+
+No tiene sentido darle el 100% del peso liberado (0.35 → 0.85, el 77% del
+total) a un valor que puede estar **congelado en una constante**. Regla
+actual (`api/bias.js`, `computeFase2Weights()`, evaluada en cada request):
+
+| Modo de Caja | Caja overnight | Nikkei | Regla |
+|---|---|---|---|
+| **Dinámico** (resumen real de box-capture) | 0.50 + 0.35 = **0.85** | 0.06 | El liberado va 100% a Caja (regla original de la Fase 2) |
+| **Fallback** (constante) + Nikkei cointegrado | 0.50 + 0.175 = **0.675** | 0.06 + 0.175 = **0.235** | El liberado se reparte 50/50 entre Caja y Nikkei (único otro factor con evidencia real) |
+| **Fallback** (constante) + Nikkei sin cointegración | **0.85** | 0.01 | Todo a Caja (Nikkei tendría score 0 por no estar cointegrado) |
+
+La transición dinámico ↔ fallback es **automática**: se decide por
+request, así que cuando `box-capture.js` acumule los 30 días hábiles
+mínimos, el sistema pasa solo a la regla original (Caja 0.85). El modo
+activo se reporta como `cajaModo: 'dinamico' | 'fallback'` en la respuesta
+de `/api/bias`.
 
 ## 7. Umbrales de la etiqueta final
 
@@ -203,11 +231,14 @@ vez de que parezca un mercado neutral.
 
 ## 8. Limitaciones conocidas (activas al momento de escribir esto)
 
-- **Caja overnight (peso 0.85, el factor más pesado)**: hasta que se
-  acumulen 30 días hábiles de historial real vía `box-capture.js`, usa
-  un valor de referencia fijo de un backtest manual de 515 días
-  (56.7% de continuación). Se actualiza solo una vez alcanzado ese
-  mínimo — ver `api/box-capture.js`.
+- **Caja overnight (el factor más pesado)**: hasta que se acumulen 30
+  días hábiles de historial real vía `box-capture.js`, usa un valor de
+  referencia fijo de un backtest manual de 515 días (56.7% de
+  continuación). Se actualiza solo una vez alcanzado ese mínimo — ver
+  `api/box-capture.js`. Para que ese peso enorme no recaiga sobre una
+  constante congelada, en modo fallback el peso se reparte 50/50 con
+  Nikkei (Caja 0.675 / Nikkei 0.235); al pasar a datos dinámicos, Caja
+  recupera el 0.85 original (Fase 5, sección 6b).
 - **El "Nasdaq ahora" no pondera** (ver secciones 3 y 4): la variación
   del día del propio ^NDX (`market.nasdaqLive`) es información circular
   para un score que describe el ^NDX, así que se muestra como contexto
@@ -220,10 +251,12 @@ vez de que parezca un mercado neutral.
   porque CNN bloquea el acceso automatizado) y desde la Fase 1 quedó
   fuera del cálculo del score para evitar doble conteo con el factor VIX.
 - **KOSPI**: la fuente (Yahoo Finance) devuelve ocasionalmente un dato
-  corrupto; el código cae a un valor fijo de emergencia
-  (`_invalid: true`) cuando esto pasa. Desde la **Fase 4**, cuando eso
-  ocurre el factor se excluye por completo del score (ver sección 7b) en
-  vez de enfriar el resultado con un dato falso.
+  fuera de todo rango plausible (ej. ^KS11 > 12000); el código cae a un
+  valor fijo de emergencia (`_invalid: true`) cuando esto pasa. Desde la
+  **Fase 4**, cuando eso ocurre el factor se excluye por completo del
+  score (ver sección 7b) en vez de enfriar el resultado con un dato
+  falso. (El sanity check usa un rango amplio 2000-12000 para adaptarse
+  al nivel real del índice, que en 2026 cotiza en ~4500-9000.)
 - **Sin intervalos de confianza ni bandas de error** en el score final
   — es un número puntual, no una estimación con incertidumbre
   cuantificada.

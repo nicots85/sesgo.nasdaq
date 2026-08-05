@@ -79,8 +79,11 @@ async function fetchMarketData() {
 
   await Promise.allSettled(fetches);
 
-  // Sanity check: KOSPI real está entre 1000-4000. Yahoo devuelve datos corruptos (^KS11 > 5000)
-  if (results.kospi && (results.kospi.price > 4000 || results.kospi.price < 1000)) {
+  // Sanity check: KOSPI real en 2026 cotiza entre ~4500 y ~9000 (subió
+  // de los 2500-3000 de años previos). Yahoo puede devolver datos
+  // corruptos fuera de todo rango plausible. El rango se mantiene amplio
+  // para no descartar el dato real si el índice sigue subiendo.
+  if (results.kospi && (results.kospi.price > 12000 || results.kospi.price < 2000)) {
     console.warn(`KOSPI corrupto (${results.kospi.price}), usando valor neutral`);
     results.kospi = { price: 2600, change: 0, previousClose: 2600, name: 'KOSPI (estimado)', _invalid: true };
   }

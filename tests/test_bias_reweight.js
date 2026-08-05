@@ -37,8 +37,16 @@ function weightOf(bias, name) {
 function run() {
   const news = { overall_score: 25 };
 
+  // boxSummary DINÁMICO simulado (>= 15 días): la Caja overnight usa
+  // datos reales de box-capture.js → aplica la regla ORIGINAL de la
+  // Fase 2 (100% del peso liberado a Caja = 0.85).
+  const boxDinamico = {
+    nDiasAcumulados: 40,
+    overnight: { alcista: { n: 40, pctContinuacion: 58, magnitudMediaContinuacionPct: 1.2 } }
+  };
+
   // Caso A: Nikkei y KOSPI cointegrados
-  const biasA = calculateBias(sampleMarket(), correlations(true, true), news, null);
+  const biasA = calculateBias(sampleMarket(), correlations(true, true), news, boxDinamico);
 
   assert(weightOf(biasA, 'Caja overnight') === 0.85, 'Caja overnight debe ser 0.85 (0.50 + 0.35 liberado)');
   assert(weightOf(biasA, 'VIX') === 0.01, 'VIX debe ser 0.01 (no pasa Bonferroni)');
@@ -57,7 +65,7 @@ function run() {
   assert(Math.abs(sumaA - 1.10) < 1e-9, `la suma cointegrada debería ser 1.10, dio ${sumaA}`);
 
   // Caso B: ninguno cointegrado → solo Nikkei baja a 0.01
-  const biasB = calculateBias(sampleMarket(), correlations(false, false), news, null);
+  const biasB = calculateBias(sampleMarket(), correlations(false, false), news, boxDinamico);
   assert(weightOf(biasB, 'Nikkei') === 0.01, 'Nikkei sin cointegración debe ser 0.01');
   assert(weightOf(biasB, 'Caja overnight') === 0.85, 'Caja overnight debe seguir en 0.85');
 
@@ -70,7 +78,7 @@ function run() {
   console.log('PESOS (caso A):');
   for (const f of biasA.factors) console.log(`  ${f.name.padEnd(18)} ${f.weight}`);
   console.log('');
-  console.log('OK: los pesos nuevos coinciden exactamente con la tabla de resultados de Fase 2 (solo Nikkei pasa Bonferroni; el peso liberado va completo a Caja overnight = 0.85).');
+  console.log('OK: los pesos nuevos coinciden exactamente con la tabla de resultados de Fase 2 (solo Nikkei pasa Bonferroni; el peso liberado va completo a Caja overnight = 0.85 en modo dinámico).');
 }
 
 run();

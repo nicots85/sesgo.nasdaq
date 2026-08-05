@@ -39,8 +39,15 @@ function sumWeights(factors) {
 function run() {
   const news = { overall_score: 25 };
 
+  // boxSummary DINÁMICO (>= 15 días): Caja overnight con datos reales →
+  // regla original de Fase 2 (Caja recibe 100% del peso liberado = 0.85).
+  const boxDinamico = {
+    nDiasAcumulados: 40,
+    overnight: { alcista: { n: 40, pctContinuacion: 58, magnitudMediaContinuacionPct: 1.2 } }
+  };
+
   // Caso A: Nikkei y KOSPI cointegrados
-  const biasA = calculateBias(sampleMarket(), cointegratedCorrelations(), news, null);
+  const biasA = calculateBias(sampleMarket(), cointegratedCorrelations(), news, boxDinamico);
 
   const namesA = biasA.factors.map(f => f.name);
   assert(!namesA.includes('Fear & Greed'),
@@ -62,7 +69,7 @@ function run() {
     `Caso A: la suma de pesos debería ser ${TOTAL_COINTEGRADOS}, dio ${sumA}`);
 
   // Caso B: ninguno cointegrado
-  const biasB = calculateBias(sampleMarket(), nonCointegratedCorrelations(), news, null);
+  const biasB = calculateBias(sampleMarket(), nonCointegratedCorrelations(), news, boxDinamico);
 
   const namesB = biasB.factors.map(f => f.name);
   assert(!namesB.includes('Fear & Greed'),

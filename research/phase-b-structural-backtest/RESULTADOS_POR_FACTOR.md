@@ -23,7 +23,7 @@ octava prueba → umbral `0.05/8 ≈ 0.00625`.
 | 5 | USD/JPY | change-D1 | −0.058 | 0.2533 | 0.0071 | no | 45.6% | 193 |
 | 6 | Crudo (WTI) | level-D1 | −0.021 | 0.6864 | 0.0071 | no | 52.6% | 388 |
 | 7 | S&P 500 | change-D1 | −0.004 | 0.9412 | 0.0071 | no | 53.8% | 277 |
-| 8 | Nasdaq momentum (lag 1) [candidato] | change-D1 | −0.002 | 0.9679 | 0.0063 | no | 52.1% | 330 |
+| 8 | Nasdaq momentum (lag 1) [candidato] | change-D1 | −0.002 | 0.9679 | 0.00625 | no | 52.1% | 330 |
 
 ## Interpretación honesta
 
