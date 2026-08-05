@@ -28,8 +28,14 @@ score_final = Σ (factor.score × factor.weight) / Σ (factor.weight)
 ```
 
 **Importante:** el denominador es la suma REAL de los pesos activos ese
-día, no siempre 1.0. Esto importa porque dos de los nueve factores
-(Nikkei y KOSPI) tienen **peso variable**: ver sección 4.
+día, no siempre 1.0. Esto importa por dos razones:
+
+1. Dos de los nueve factores (Nikkei y KOSPI) tienen **peso variable**:
+   ver sección 4.
+2. **Datos faltantes (Fase 4):** si un factor no tiene dato válido ese
+   día, se **excluye del numerador Y del denominador** (no se fuerza a
+   score 0 con peso completo, que enfriaba el score hacia neutral de
+   forma artificial). Ver sección 7b.
 
 El resultado se redondea al entero más cercano.
 
@@ -170,6 +176,31 @@ Regla objetiva de mapeo (NEUTRAL = 40% central real de los datos):
 > meses de datos nuevos acumulados. La fecha de cálculo está anotada para
 > saber cuándo volver a correr el script.
 
+## 7b. Datos faltantes (Fase 4)
+
+Cuando un factor no tiene dato válido ese día, se **excluye por completo**
+del cálculo: no entra ni en el numerador ni en el denominador. No se lo
+fuerza a score 0 con su weight completo, porque eso "enfriaba" el score
+hacia neutral de forma artificial (el mercado no estaba neutral; faltaba
+el dato).
+
+Cuándo un factor cuenta como no disponible:
+
+- **Noticias (IA)**: si `analysis.error` existe (Groq con rate limit,
+  timeout, API key caída, fallo de conexión).
+- **KOSPI**: si `market.kospi._invalid === true` (dato corrupto de Yahoo,
+  valor de emergencia).
+- **Cualquier otro**: si su dato crudo (`raw`) es `null`/`undefined`
+  (ej. `market.vix == null`).
+- **Caja overnight** siempre está disponible: si el backtest dinámico de
+  `box-capture.js` no tiene datos suficientes, se usa el valor de
+  referencia fijo (nunca es "dato faltante").
+
+Cada factor lleva la bandera `disponible: true/false` en `bias.factors`, y
+el resultado incluye `factoresExcluidosPorDatoFaltante` (array de nombres)
+para que el frontend muestre "hoy faltó Noticias por límite de Groq" en
+vez de que parezca un mercado neutral.
+
 ## 8. Limitaciones conocidas (activas al momento de escribir esto)
 
 - **Caja overnight (peso 0.85, el factor más pesado)**: hasta que se
@@ -190,8 +221,9 @@ Regla objetiva de mapeo (NEUTRAL = 40% central real de los datos):
   fuera del cálculo del score para evitar doble conteo con el factor VIX.
 - **KOSPI**: la fuente (Yahoo Finance) devuelve ocasionalmente un dato
   corrupto; el código cae a un valor fijo de emergencia
-  (`_invalid: true`) cuando esto pasa. Pendiente de una fuente más
-  confiable.
+  (`_invalid: true`) cuando esto pasa. Desde la **Fase 4**, cuando eso
+  ocurre el factor se excluye por completo del score (ver sección 7b) en
+  vez de enfriar el resultado con un dato falso.
 - **Sin intervalos de confianza ni bandas de error** en el score final
   — es un número puntual, no una estimación con incertidumbre
   cuantificada.

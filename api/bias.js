@@ -91,17 +91,26 @@ function labelFromScore(finalScore) {
 }
 
 function calculateBias(market, correlations, newsAnalysis, boxSummary) {
-  const vixPrice = market.vix?.price || 20;
-  const dxyPrice = market.dxy?.price || 101;
-  const usdjpyChg = market.usdjpy?.change || 0;
-  const nikkeiChg = market.nikkei?.change || 0;
-  const kospiChg = market.kospi?.change || 0;
-  const sp500Chg = market.sp500?.change || 0;
-  const wtiPrice = market.wti?.price || 75;
-  const newsScore = newsAnalysis?.overall_score || 0;
+  // Lectura con null-coalescing (??): si el dato falta, queda null y el
+  // factor se marca disponible:false. NO usamos || porque el fallback
+  // "silencioso" a 20/101/75 enmascaraba el dato faltante como si fuera
+  // un dato real (enfriando el score hacia neutral artificialmente).
+  const vixPrice = market.vix?.price ?? null;
+  const dxyPrice = market.dxy?.price ?? null;
+  const usdjpyChg = market.usdjpy?.change ?? null;
+  const nikkeiChg = market.nikkei?.change ?? null;
+  const kospiChg = market.kospi?.change ?? null;
+  const sp500Chg = market.sp500?.change ?? null;
+  const wtiPrice = market.wti?.price ?? null;
+  const newsScore = newsAnalysis?.overall_score ?? null;
+  const newsError = newsAnalysis?.error || null;
 
   const nikkeiCoint = correlations.nikkei__nasdaq?.cointegration?.isCointegrated || false;
   const kospiCoint = correlations.kospi__nasdaq?.cointegration?.isCointegrated || false;
+
+  // KOSPI corrupto (Yahoo devuelve ^KS11 > 5000): market.js lo marca
+  // con _invalid:true y un valor estimado. Ese valor NO es un dato real.
+  const kospiInvalid = market.kospi?._invalid === true;
 
   // Caja overnight: usamos el backtest dinámico (box-capture.js) si ya
   // hay suficiente historial acumulado (mínimo 30 días). Si todavía no
@@ -149,83 +158,107 @@ function calculateBias(market, correlations, newsAnalysis, boxSummary) {
       description: cajaDescripcion,
       score: scoreCaja(cajaRaw),
       weight: 0.85,
-      raw: cajaRaw
+      raw: cajaRaw,
+      disponible: true // siempre disponible: boxSummary dinámico o valor de referencia fijo
     },
     {
       name: 'VIX',
-      description: vixPrice < 15 ? 'Mercado tranquilo' : vixPrice < 20 ? 'Elevado' : vixPrice < 25 ? 'Alta volatilidad' : 'Crisis',
-      score: scoreVix(vixPrice),
+      description: vixPrice == null ? 'Dato no disponible' : (vixPrice < 15 ? 'Mercado tranquilo' : vixPrice < 20 ? 'Elevado' : vixPrice < 25 ? 'Alta volatilidad' : 'Crisis'),
+      score: vixPrice == null ? 0 : scoreVix(vixPrice),
       weight: 0.01,
-      raw: vixPrice
+      raw: vixPrice,
+      disponible: vixPrice != null
     },
     {
       name: 'DXY (Dólar)',
-      description: dxyPrice < 99 ? 'Dólar débil (bueno para Nasdaq)' : dxyPrice < 102 ? 'Dólar neutro' : dxyPrice < 104 ? 'Dólar fuerte (presión)' : 'Dólar muy fuerte (riesgo)',
-      score: scoreDxy(dxyPrice),
+      description: dxyPrice == null ? 'Dato no disponible' : (dxyPrice < 99 ? 'Dólar débil (bueno para Nasdaq)' : dxyPrice < 102 ? 'Dólar neutro' : dxyPrice < 104 ? 'Dólar fuerte (presión)' : 'Dólar muy fuerte (riesgo)'),
+      score: dxyPrice == null ? 0 : scoreDxy(dxyPrice),
       weight: 0.01,
-      raw: dxyPrice
+      raw: dxyPrice,
+      disponible: dxyPrice != null
     },
     {
       name: 'USD/JPY',
-      description: usdjpyChg > 0.5 ? 'Yen débil (carry trade activo)' : usdjpyChg < -1 ? 'Yen fortaleciéndose (riesgo)' : 'Estable',
-      score: scoreUsdjpy(usdjpyChg),
+      description: usdjpyChg == null ? 'Dato no disponible' : (usdjpyChg > 0.5 ? 'Yen débil (carry trade activo)' : usdjpyChg < -1 ? 'Yen fortaleciéndose (riesgo)' : 'Estable'),
+      score: usdjpyChg == null ? 0 : scoreUsdjpy(usdjpyChg),
       weight: 0.01,
-      raw: usdjpyChg
+      raw: usdjpyChg,
+      disponible: usdjpyChg != null
     },
     {
       name: 'Nikkei',
-      description: nikkeiCoint
-        ? `Cointegrado con Nasdaq: ${nikkeiChg > 0 ? 'sube' : 'baja'} → señal directa`
-        : 'Sin relación estructural con Nasdaq',
-      score: scoreNikkei(nikkeiChg, nikkeiCoint),
+      description: nikkeiChg == null
+        ? 'Dato no disponible'
+        : nikkeiCoint
+          ? `Cointegrado con Nasdaq: ${nikkeiChg > 0 ? 'sube' : 'baja'} → señal directa`
+          : 'Sin relación estructural con Nasdaq',
+      score: nikkeiChg == null ? 0 : scoreNikkei(nikkeiChg, nikkeiCoint),
       weight: nikkeiCoint ? 0.06 : 0.01, // PASA Bonferroni (p=0.0009) → mantiene peso
       raw: nikkeiChg,
-      cointegrated: nikkeiCoint
+      cointegrated: nikkeiCoint,
+      disponible: nikkeiChg != null
     },
     {
       name: 'KOSPI',
-      description: kospiCoint
-        ? `Cointegrado con Nasdaq: ${kospiChg > 0 ? 'sube' : 'baja'} → señal directa`
-        : 'Sin relación estructural con Nasdaq',
-      score: scoreKospi(kospiChg, kospiCoint),
+      description: kospiChg == null || kospiInvalid
+        ? 'Dato no disponible'
+        : kospiCoint
+          ? `Cointegrado con Nasdaq: ${kospiChg > 0 ? 'sube' : 'baja'} → señal directa`
+          : 'Sin relación estructural con Nasdaq',
+      score: kospiChg == null || kospiInvalid ? 0 : scoreKospi(kospiChg, kospiCoint),
       weight: 0.01, // NO pasa Bonferroni (p=0.0136) → piso mínimo 0.01
       raw: kospiChg,
-      cointegrated: kospiCoint
+      cointegrated: kospiCoint,
+      disponible: kospiChg != null && !kospiInvalid
     },
     {
       name: 'S&P 500',
-      description: sp500Chg > 0.5 ? 'Mercado subiendo' : sp500Chg < -0.5 ? 'Mercado bajando' : 'Plano',
-      score: scoreSp500(sp500Chg),
+      description: sp500Chg == null ? 'Dato no disponible' : (sp500Chg > 0.5 ? 'Mercado subiendo' : sp500Chg < -0.5 ? 'Mercado bajando' : 'Plano'),
+      score: sp500Chg == null ? 0 : scoreSp500(sp500Chg),
       weight: 0.01, // NO pasa Bonferroni (p=0.9412) → piso mínimo 0.01
-      raw: sp500Chg
+      raw: sp500Chg,
+      disponible: sp500Chg != null
     },
     {
       name: 'Crudo (WTI)',
-      description: wtiPrice < 65 ? 'Energía barata (positivo)' : wtiPrice > 90 ? 'Energía cara (inflación)' : wtiPrice > 75 ? 'Elevado (presión inflación)' : 'Normal',
-      score: scoreWti(wtiPrice),
+      description: wtiPrice == null ? 'Dato no disponible' : (wtiPrice < 65 ? 'Energía barata (positivo)' : wtiPrice > 90 ? 'Energía cara (inflación)' : wtiPrice > 75 ? 'Elevado (presión inflación)' : 'Normal'),
+      score: wtiPrice == null ? 0 : scoreWti(wtiPrice),
       weight: 0.01, // NO pasa Bonferroni (p=0.6864) → piso mínimo 0.01
-      raw: wtiPrice
+      raw: wtiPrice,
+      disponible: wtiPrice != null
     },
     {
       name: 'Noticias (IA)',
-      description: newsScore > 20 ? 'Sentimiento positivo' : newsScore < -20 ? 'Sentimiento negativo' : 'Neutral',
-      score: scoreNoticias(newsScore),
+      description: newsError != null
+        ? 'Dato no disponible (falló Groq)'
+        : newsScore > 20 ? 'Sentimiento positivo' : newsScore < -20 ? 'Sentimiento negativo' : 'Neutral',
+      score: newsError != null || newsScore == null ? 0 : scoreNoticias(newsScore),
       weight: 0.13,
-      raw: newsScore
+      raw: newsScore,
+      disponible: newsError == null && newsScore != null
     }
   ];
 
+  // FASE 4 — Redistribución de peso por dato faltante: solo los factores
+  // con disponible=true se cuentan en el numerador y el denominador. Los
+  // que faltan se EXCLUYEN del todo (no se fuerzan a score 0 con peso
+  // completo — eso enfriaba el score hacia neutral artificialmente).
   let totalScore = 0;
   let totalWeight = 0;
+  const factoresExcluidosPorDatoFaltante = [];
   for (const f of factors) {
+    if (!f.disponible) {
+      factoresExcluidosPorDatoFaltante.push(f.name);
+      continue;
+    }
     totalScore += f.score * f.weight;
     totalWeight += f.weight;
   }
-  const finalScore = Math.round(totalScore / totalWeight);
+  const finalScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
 
   const { label, emoji } = labelFromScore(finalScore);
 
-  return { score: finalScore, label, emoji, factors };
+  return { score: finalScore, label, emoji, factors, factoresExcluidosPorDatoFaltante };
 }
 
 function detectAlerts(bias, prevBias) {
@@ -335,7 +368,19 @@ async function getBias() {
   const historicalPrices = await ensureHistoricalData();
   const correlations = calculateCorrelations(historicalPrices);
 
-  const news = await withTimeout(fetchAndAnalyzeNews(), 15000);
+  let news;
+  try {
+    news = await withTimeout(fetchAndAnalyzeNews(), 15000);
+  } catch (e) {
+    // FASE 4: si las noticias fallan (timeout, Groq caído, etc.), NO
+    // tumbamos todo el endpoint: se marca el factor como no disponible
+    // y se excluye del score. newsAnalysis.error lo detecta calculateBias.
+    news = {
+      analysis: { overall_score: 0, confidence: 'baja', individual: [], key_factor: 'Error al obtener noticias', alert: null, error: e.message },
+      sources: { english: 0, spanish: 0, total: 0 },
+      headlines: []
+    };
+  }
   const boxSummary = await getBoxSummary();
   const bias = calculateBias(market, correlations, news.analysis, boxSummary);
 

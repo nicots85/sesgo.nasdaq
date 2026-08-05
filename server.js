@@ -15,7 +15,7 @@ const MIME = {
 };
 
 // Cargar módulos una sola vez
-let getBias, newsHandler;
+let getBias, newsHandler, biasV2Handler;
 try {
   getBias = require('./api/bias').getBias;
   console.log('✓ bias.js cargado');
@@ -27,6 +27,12 @@ try {
   console.log('✓ news.js cargado');
 } catch (e) {
   console.error('✗ Error cargando news.js:', e.message);
+}
+try {
+  biasV2Handler = require('./api/bias-v2').handler;
+  console.log('✓ bias-v2.js cargado');
+} catch (e) {
+  console.error('✗ Error cargando bias-v2.js:', e.message);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -52,6 +58,8 @@ const server = http.createServer(async (req, res) => {
       }
     } else if (req.url === '/api/news' && newsHandler) {
       await newsHandler(req, res);
+    } else if (req.url === '/api/bias-v2' && biasV2Handler) {
+      await biasV2Handler(req, res);
     } else {
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'not found' }));

@@ -138,6 +138,17 @@
       margin-top: 18px;
     }
 
+    .hero-missing {
+      margin-top: 14px;
+      font-size: 0.82rem;
+      color: var(--yellow);
+      opacity: 0.9;
+      max-width: 480px;
+      margin-left: auto;
+      margin-right: auto;
+      line-height: 1.5;
+    }
+
     .chip {
       display: inline-flex;
       align-items: center;
@@ -373,6 +384,7 @@
         <div class="hero-label" id="heroLabel">--</div>
         <div class="hero-reason" id="heroReason"></div>
         <div class="hero-chips" id="heroChips"></div>
+        <div class="hero-missing" id="heroMissing" style="display:none"></div>
       </div>
 
       <!-- 4 números clave, nada más -->
@@ -569,6 +581,18 @@
       enContra.forEach(f => {
         chipsEl.innerHTML += `<span class="chip en-contra">▼ ${f.name}</span>`;
       });
+
+      // FASE 4: aviso chico y no invasivo si faltó algún factor (Groq caído,
+      // dato corrupto, etc.) — para que el usuario no confunda "dato faltante"
+      // con "el mercado está neutral".
+      const missingEl = document.getElementById('heroMissing');
+      const excluidos = bias.factoresExcluidosPorDatoFaltante || [];
+      if (excluidos.length > 0) {
+        missingEl.style.display = 'block';
+        missingEl.textContent = `Nota: hoy no se contó ${excluidos.join(', ')} por dato faltante (no es señal de mercado neutral).`;
+      } else {
+        missingEl.style.display = 'none';
+      }
     }
 
     // ---------- 4 números clave, no 9 (con el change real de VIX/DXY, no null) ----------
