@@ -57,29 +57,42 @@ function scoreNoticias(newsScore) {
 // UMBRALES DE ETIQUETA — FASE 3: calibrados contra la distribución REAL
 // del score (no valores arbitrarios).
 //
-// Cálculo: research/phase-b-structural-backtest/compute-score-distribution.js
-//   Serie de 388 días (2 años Yahoo), pesos ACTUALIZADOS de la Fase 2,
-//   mismas reglas de lag que Fase B (Noticias = 0, Caja = valor de
-//   referencia fijo).
-//   min=5 | max=16 | media=10.96 | desvío=3.09
-//   Percentiles: p10=7, p25=8, p30=9, p40=10, p50=11, p60=13, p70=13,
-//   p75=14, p90=15
+// Cálculo: research/phase-b-structural-backtest/compute-score-distribution-v2.js
+//   Serie de 388 días (2 años Yahoo), pesos ACTUALIZADOS (Fase 2 + Fase 5),
+//   mismas reglas de lag que Fase B, con variación SIMULADA de los dos
+//   factores que la calibración original mantuvo congelados (FIX Fase 3 v2):
+//     - Noticias (IA): ~N(0,50) truncada a [-100,100] (PROXY, no hay
+//       historial real en producción todavía)
+//     - Caja overnight: ~U(40,70) simulando el modo DINÁMICO (futuro)
+//   Variante C (300 simulaciones de bootstrap): min=-32 | max=48 |
+//   media=8.32 | desvío=14.87
+//   Percentiles: p10=-12, p30=-1, p70=18, p90=28
+//
+// NOTA IMPORTANTE: la calibración ORIGINAL (min=5, max=16, umbrales <=15)
+// quedó obsoleta por DOS motivos: (1) el fix de Fase 5 cambió los pesos
+// (Caja 0.675/Nikkei 0.235 en fallback), ensanchando la distribución a
+// min=-7/max=24 incluso con Noticias=0; (2) Noticias y Caja estaban
+// congeladas, por lo que el score nunca fue negativo. Esta recalibración
+// usa la variante MÁS realista (Noticias variable + Caja dinámica).
 //
 // Regla objetiva de mapeo (NEUTRAL = 40% central real de los datos):
-//   BAJISTA FUERTE:       score <= p10  (<= 7)
-//   BAJISTA CON CAUTELA:  p10 <  score <= p30  (8 a 9)
-//   NEUTRAL:              p30 <  score <= p70  (10 a 13)
-//   ALCISTA CON CAUTELA:  p70 <  score <= p90  (14 a 15)
-//   ALCISTA FUERTE:       score > p90  (> 15)
+//   BAJISTA FUERTE:       score <= p10  (<= -12)
+//   BAJISTA CON CAUTELA:  p10 <  score <= p30  (-11 a -1)
+//   NEUTRAL:              p30 <  score <= p70  (0 a 18)
+//   ALCISTA CON CAUTELA:  p70 <  score <= p90  (19 a 28)
+//   ALCISTA FUERTE:       score > p90  (> 28)
 //
 // Son valores FIJOS calculados una vez (no percentiles recalculados en
 // cada request). El histórico se recalibra manualmente cada tanto.
+// ADVERTENCIA: recalibrar cuando Caja pase a modo dinámico de forma
+// sostenida, porque aportará variación real que esta calibración
+// (basada en la variante simulada C) todavía no vio de forma real.
 // =====================================================================
 const THRESHOLDS = {
-  alcistaFuerte: 15,   // score > 15 → ALCISTA FUERTE
-  alcistaCautela: 13,  // score > 13 → ALCISTA CON CAUTELA
-  neutral: 9,          // score > 9  → NEUTRAL
-  bajistaCautela: 7,   // score > 7  → BAJISTA CON CAUTELA
+  alcistaFuerte: 28,   // score > 28 → ALCISTA FUERTE
+  alcistaCautela: 18,  // score > 18 → ALCISTA CON CAUTELA
+  neutral: -1,         // score > -1 → NEUTRAL
+  bajistaCautela: -12, // score > -12 → BAJISTA CON CAUTELA
 };
 
 function labelFromScore(finalScore) {
@@ -118,8 +131,23 @@ const PESOS_BASE = {
 const PISO_BONFERRONI = 0.01;
 const SIN_BONFERRONI = ['vix', 'dxy', 'usdjpy', 'kospi', 'sp500', 'wti'];
 
-function pesoLiberado() {
-  return SIN_BONFERRONI.reduce((acc, k) => acc + (PESOS_BASE[k] - PISO_BONFERRONI), 0); // 0.35
+/**
+ * Peso liberado DINÁMICO: cada factor que ESE DÍA quedó en piso 0.01
+ * (no pasó Bonferroni, o Nikkei sin cointegración) libera
+ * (pesoOriginal - 0.01). Recalculado en CADA request, NO una constante
+ * fija: si Nikkei no está cointegrado también libera su 0.05 extra al
+ * pool.
+ *
+ * @param {boolean} nikkeiCoint  true si Nikkei está cointegrado con Nasdaq
+ * @returns {number}
+ */
+function pesoLiberado(nikkeiCoint) {
+  // 0.35 base: los 6 que nunca pasaron Bonferroni (VIX, DXY, USD/JPY,
+  // KOSPI, S&P 500, WTI).
+  let lib = SIN_BONFERRONI.reduce((acc, k) => acc + (PESOS_BASE[k] - PISO_BONFERRONI), 0);
+  // Nikkei sin cointegración también queda en piso → libera 0.05 extra.
+  if (!nikkeiCoint) lib += PESOS_BASE.nikkei - PISO_BONFERRONI; // 0.06 - 0.01 = 0.05
+  return lib;
 }
 
 /**
@@ -134,7 +162,7 @@ function pesoLiberado() {
  * @returns {{caja: number, nikkei: number, pesoLiberado: number}}
  */
 function computeFase2Weights(cajaDinamica, nikkeiCoint) {
-  const lib = pesoLiberado();
+  const lib = pesoLiberado(nikkeiCoint);
   const nikkeiBase = nikkeiCoint ? PESOS_BASE.nikkei : PISO_BONFERRONI;
   let caja = PESOS_BASE.caja;
   let nikkei = nikkeiBase;
@@ -149,7 +177,7 @@ function computeFase2Weights(cajaDinamica, nikkeiCoint) {
   } else {
     // Fallback + Nikkei SIN cointegración: Nikkei no tiene señal utilizable
     // (su score es 0), darle peso liberado solo diluiría el score → queda
-    // todo en Caja. Edge case poco probable (Nikkei está cointegrado hoy).
+    // todo en Caja. Incluye el 0.05 extra que Nikkei libera al caer a piso.
     caja += lib;
   }
 

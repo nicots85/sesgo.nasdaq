@@ -167,7 +167,14 @@ actual (`api/bias.js`, `computeFase2Weights()`, evaluada en cada request):
 |---|---|---|---|
 | **Dinámico** (resumen real de box-capture) | 0.50 + 0.35 = **0.85** | 0.06 | El liberado va 100% a Caja (regla original de la Fase 2) |
 | **Fallback** (constante) + Nikkei cointegrado | 0.50 + 0.175 = **0.675** | 0.06 + 0.175 = **0.235** | El liberado se reparte 50/50 entre Caja y Nikkei (único otro factor con evidencia real) |
-| **Fallback** (constante) + Nikkei sin cointegración | **0.85** | 0.01 | Todo a Caja (Nikkei tendría score 0 por no estar cointegrado) |
+| **Fallback** (constante) + Nikkei sin cointegración | 0.50 + 0.40 = **0.90** | 0.01 | Todo a Caja (Nikkei sin señal). El liberado es DINÁMICO: 0.35 de los 6 sin Bonferroni + 0.05 que Nikkei libera al caer a piso |
+
+> **Peso liberado dinámico (no constante):** el pool se recalcula en cada
+> request como `suma de (pesoOriginal - 0.01)` de TODOS los factores que
+> ese día quedaron en piso. Los 6 que nunca pasaron Bonferroni liberan
+> siempre 0.35; si además Nikkei no está cointegrado ese día, libera sus
+> 0.05 extra (0.06 - 0.01). El cálculo vive en `pesoLiberado()` de
+> `api/bias.js` y nunca pierde peso (la suma total siempre es 1.10).
 
 La transición dinámico ↔ fallback es **automática**: se decide por
 request, así que cuando `box-capture.js` acumule los 30 días hábiles
@@ -177,32 +184,87 @@ de `/api/bias`.
 
 ## 7. Umbrales de la etiqueta final
 
-Los umbrales se **calibran contra la distribución real del score**, no a
-ojo. El cálculo se hace con `research/.../compute-score-distribution.js`:
-reconstruye el score completo día por día (388 días, 2 años de Yahoo),
-con los pesos actualizados de la Fase 2 y las mismas reglas de lag de la
-Fase B (Noticias = 0, Caja = valor de referencia fijo).
+Los umbrales se **calibran contra la distribución del score**, no a ojo.
+El cálculo se hace con
+`research/.../compute-score-distribution-v2.js`: reconstruye el score
+completo día por día (388 días, 2 años de Yahoo) con los pesos actuales
+(Fase 2 + Fase 5) y las mismas reglas de lag de la Fase B, pero con
+variación SIMULADA de los dos factores que la calibración original mantuvo
+congelados (ver abajo).
 
-Serie calculada el **2026-08-04**: min=5 | max=16 | media=10.96 |
-desvío=3.09. Percentiles: p10=7, p25=8, p30=9, p40=10, p50=11, p60=13,
-p70=13, p75=14, p90=15.
+### 7.1 Por qué se corrigió la calibración original
 
-Regla objetiva de mapeo (NEUTRAL = 40% central real de los datos):
+La calibración original (Fase 3, calculada el 2026-08-04) arrojó
+**min=5 | max=16 | media=10.96 | desvío=3.09** — un score que en 2 años de
+histórico NUNCA fue negativo. Eso no reflejaba el mercado real: reflejaba
+que los dos factores de mayor peso combinado nunca variaron en esa
+medición:
+
+- **Noticias (IA)** se fijó en `overall_score: 0` todos los días (no hay
+  historial reconstruible, mismo criterio que la Fase B — correcto para
+  ese propósito).
+- **Caja overnight** se fijó en su valor de referencia (56.7%) todos los
+  días, una CONSTANTE.
+
+Esas neutralizaciones son correctas para aislar el edge del resto de los
+factores (Fase B), pero NO para calibrar umbrales de etiqueta que deben
+reflejar lo que el score va a hacer de verdad en producción. A eso se sumó
+que el **fix de Fase 5** cambió los pesos (Caja 0.675 / Nikkei 0.235 en
+modo fallback, en vez de 0.85/0.06 con que se calibró la Fase 3), lo que ya
+por sí solo ensanchó la distribución real a **min=-7 | max=24** aun con
+Noticias en 0.
+
+### 7.2 Nueva calibración (Fase 3 v2)
+
+`compute-score-distribution-v2.js` genera variantes con muestreo
+(bootstrap, 300 simulaciones):
+
+- **Noticias (IA):** `~N(0,50)` truncada a `[-100,100]`. Es un **PROXY**:
+  el KV de producción solo guarda `score`/`label` del día, no el
+  `overall_score` de noticias, y el proyecto en Vercel lleva ~6 días, así
+  que no hay historial real suficiente. Documentado como aproximación, no
+  datos reales.
+- **Caja overnight:** dos modos — valor de referencia fijo (56.7%, fallback
+  como hoy) y rango dinámico simulado `~U(40,70)` (cuando box-capture.js
+  pase a modo dinámico).
+
+Resultados (comparados con la calibración original):
+
+| Variante | min | max | media | desvío | p10 | p30 | p70 | p90 |
+|---|---|---|---|---|---|---|---|---|
+| *Original Fase 3 (congelados)* | *5* | *16* | *10.96* | *3.09* | *7* | *9* | *13* | *15* |
+| A. Baseline (Noticias=0, Caja fija) | -7 | 24 | 9.48 | 10.36 | -5 | 2 | 16 | 22 |
+| B. Noticias ~N(0,50) + Caja fija | -19 | 35 | 9.48 | 11.82 | -7 | 2 | 18 | 25 |
+| **C. Noticias ~N(0,50) + Caja ~U(40,70) dinámico** | **-32** | **48** | **8.32** | **14.87** | **-12** | **-1** | **18** | **28** |
+
+Se adoptó la **variante C**: es la más realista hacia adelante, porque
+incluye la variación de Noticias (que ya ocurre en producción) y la de
+Caja en modo dinámico (que ocurrirá en cuanto box-capture.js acumule los
+30 días). La variante B (solo Noticias) subestima el rango de Caja dinámica
+que ya está en el horizonte.
+
+Regla objetiva de mapeo (NEUTRAL = 40% central de los datos):
 
 | Score | Etiqueta |
 |-------|----------|
-| > 15 (score > p90) | ALCISTA FUERTE |
-| 14 a 15 (p70 < score ≤ p90) | ALCISTA CON CAUTELA |
-| 10 a 13 (p30 < score ≤ p70) | NEUTRAL |
-| 8 a 9 (p10 < score ≤ p30) | BAJISTA CON CAUTELA |
-| ≤ 7 (score ≤ p10) | BAJISTA FUERTE |
+| > 28 (score > p90) | ALCISTA FUERTE |
+| 19 a 28 (p70 < score ≤ p90) | ALCISTA CON CAUTELA |
+| 0 a 18 (p30 < score ≤ p70) | NEUTRAL |
+| -11 a -1 (p10 < score ≤ p30) | BAJISTA CON CAUTELA |
+| ≤ -12 (score ≤ p10) | BAJISTA FUERTE |
 
 > **Cuándo recalibrar:** los valores numéricos quedaron fijos en
 > `api/bias.js` (constante `THRESHOLDS`) y no se recalculan en cada
 > request. Se recalibran **manualmente** cuando cambien materialmente los
-> pesos de los factores (una nueva Fase de re-ponderación) o cada unos
-> meses de datos nuevos acumulados. La fecha de cálculo está anotada para
-> saber cuándo volver a correr el script.
+> pesos de los factores o cada unos meses de datos nuevos acumulados.
+>
+> **ADVERTENCIA EXPLÍCITA:** estos umbrales deben recalibrarse en cuanto
+> Caja overnight pase a modo dinámico de forma sostenida (no solo el
+> primer día), porque va a aportar variación real que esta calibración
+> todavía no vio — la variante C la simula con `U(40,70)`, pero la
+> distribución real de box-capture.js puede diferir. Lo mismo si se
+> acumulan días reales de Noticias que permitan reemplazar el proxy
+> `N(0,50)` por la distribución real.
 
 ## 7b. Datos faltantes (Fase 4)
 

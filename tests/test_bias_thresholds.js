@@ -4,29 +4,30 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * FASE 3 — Verifica que los 5 umbrales de etiqueta:
+ * FASE 3 (v2) — Verifica que los 5 umbrales de etiqueta:
  *   1. Estén en orden creciente correcto (BAJISTA FUERTE < BAJISTA CON
  *      CAUTELA < NEUTRAL < ALCISTA CON CAUTELA < ALCISTA FUERTE).
  *   2. Cubran todo el rango -100 a 100 sin huecos ni superposiciones
  *      (cada score entero pertenece a exactamente una banda).
  *   3. Coincidan con los percentiles reales calculados en
- *      compute-score-distribution.js (p10, p30, p70, p90).
+ *      compute-score-distribution-v2.js (variante C: Noticias ~ N(0,50)
+ *      + Caja ~ U(40,70) dinámico) — p10, p30, p70, p90.
  */
 
 const ORDER = ['BAJISTA FUERTE', 'BAJISTA CON CAUTELA', 'NEUTRAL', 'ALCISTA CON CAUTELA', 'ALCISTA FUERTE'];
 
-// Valores esperados derivados de los percentiles reales:
-//   BAJISTA FUERTE:       score <= p10  (<= 7)
-//   BAJISTA CON CAUTELA:  p10 <  score <= p30  (8 a 9)
-//   NEUTRAL:              p30 <  score <= p70  (10 a 13)
-//   ALCISTA CON CAUTELA:  p70 <  score <= p90  (14 a 15)
-//   ALCISTA FUERTE:       score > p90  (> 15)
+// Valores esperados derivados de los percentiles de la variante C (v2):
+//   BAJISTA FUERTE:       score <= p10  (<= -12)
+//   BAJISTA CON CAUTELA:  p10 <  score <= p30  (-11 a -1)
+//   NEUTRAL:              p30 <  score <= p70  (0 a 18)
+//   ALCISTA CON CAUTELA:  p70 <  score <= p90  (19 a 28)
+//   ALCISTA FUERTE:       score > p90  (> 28)
 const EXPECTED_BANDS = {
-  'BAJISTA FUERTE':      { min: -100, max: 7 },
-  'BAJISTA CON CAUTELA': { min: 8,    max: 9 },
-  'NEUTRAL':             { min: 10,   max: 13 },
-  'ALCISTA CON CAUTELA': { min: 14,   max: 15 },
-  'ALCISTA FUERTE':      { min: 16,   max: 100 },
+  'BAJISTA FUERTE':      { min: -100, max: -12 },
+  'BAJISTA CON CAUTELA': { min: -11,  max: -1 },
+  'NEUTRAL':             { min: 0,    max: 18 },
+  'ALCISTA CON CAUTELA': { min: 19,   max: 28 },
+  'ALCISTA FUERTE':      { min: 29,   max: 100 },
 };
 
 function run() {
@@ -69,27 +70,29 @@ function run() {
   assert(bands['BAJISTA FUERTE'].min === -100, `BAJISTA FUERTE debe empezar en -100, empieza en ${bands['BAJISTA FUERTE'].min}`);
   assert(bands['ALCISTA FUERTE'].max === 100, `ALCISTA FUERTE debe terminar en 100, termina en ${bands['ALCISTA FUERTE'].max}`);
 
-  // 3. Coincidencia con los percentiles reales calculados
-  const jsonPath = path.join(__dirname, '..', 'research', 'phase-b-structural-backtest', 'score-distribution.json');
+  // 3. Coincidencia con los percentiles de la variante C (v2, la más realista)
+  const jsonPath = path.join(__dirname, '..', 'research', 'phase-b-structural-backtest', 'score-distribution-v2.json');
   if (fs.existsSync(jsonPath)) {
     const dist = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
-    const P = dist.percentiles || {};
-    assert.strictEqual(THRESHOLDS.bajistaCautela, P.p10, `bajistaCautela debería ser p10 (${P.p10})`);
-    assert.strictEqual(THRESHOLDS.neutral, P.p30, `neutral (borde inferior) debería ser p30 (${P.p30})`);
-    assert.strictEqual(THRESHOLDS.alcistaCautela, P.p70, `alcistaCautela (borde inferior) debería ser p70 (${P.p70})`);
-    assert.strictEqual(THRESHOLDS.alcistaFuerte, P.p90, `alcistaFuerte (borde inferior) debería ser p90 (${P.p90})`);
+    const P = dist.variantes?.C_noticias_caja_dinamica?.stats?.percentiles || {};
+    if (P.p10 != null) {
+      assert.strictEqual(THRESHOLDS.bajistaCautela, P.p10, `bajistaCautela debería ser p10 (${P.p10})`);
+      assert.strictEqual(THRESHOLDS.neutral, P.p30, `neutral (borde inferior) debería ser p30 (${P.p30})`);
+      assert.strictEqual(THRESHOLDS.alcistaCautela, P.p70, `alcistaCautela (borde inferior) debería ser p70 (${P.p70})`);
+      assert.strictEqual(THRESHOLDS.alcistaFuerte, P.p90, `alcistaFuerte (borde inferior) debería ser p90 (${P.p90})`);
+    }
   } else {
-    console.warn('AVISO: score-distribution.json no encontrado, no se puede verificar contra los percentiles reales.');
+    console.warn('AVISO: score-distribution-v2.json no encontrado, no se puede verificar contra los percentiles reales.');
   }
 
-  console.log('Umbrales (FASE 3, derivados de percentiles del histórico real):');
+  console.log('Umbrales (FASE 3 v2, derivados de percentiles de la variante C simulada):');
   for (const label of ORDER) {
     const b = EXPECTED_BANDS[label];
     const real = bands[label];
     console.log(`  ${label.padEnd(22)} ${String(b.min).padStart(4)} a ${String(b.max).padEnd(4)}  (real: ${real.min} a ${real.max}, ${real.count} valores)`);
   }
   console.log('');
-  console.log('OK: los 5 umbrales están en orden creciente, cubren todo el rango -100 a 100 sin huecos ni superposiciones, y coinciden con los percentiles reales.');
+  console.log('OK: los 5 umbrales están en orden creciente, cubren todo el rango -100 a 100 sin huecos ni superposiciones, y coinciden con los percentiles de la variante C.');
 }
 
 run();

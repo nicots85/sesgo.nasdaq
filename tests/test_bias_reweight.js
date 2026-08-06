@@ -64,13 +64,16 @@ function run() {
     `suma de pesos cointegrados debería ser ${TOTAL_COINT}, dio ${sumaA}`);
   assert(Math.abs(sumaA - 1.10) < 1e-9, `la suma cointegrada debería ser 1.10, dio ${sumaA}`);
 
-  // Caso B: ninguno cointegrado → solo Nikkei baja a 0.01
+  // Caso B: ninguno cointegrado → Nikkei Y KOSPI bajan a 0.01. Como Nikkei
+  // ahora está en piso, el peso liberado es DINÁMICO: 0.35 + 0.05 = 0.40,
+  // y todo va a Caja (0.50 + 0.40 = 0.90). No se pierde peso.
   const biasB = calculateBias(sampleMarket(), correlations(false, false), news, boxDinamico);
   assert(weightOf(biasB, 'Nikkei') === 0.01, 'Nikkei sin cointegración debe ser 0.01');
-  assert(weightOf(biasB, 'Caja overnight') === 0.85, 'Caja overnight debe seguir en 0.85');
+  assert(Math.abs(weightOf(biasB, 'Caja overnight') - 0.90) < 1e-9,
+    'Caja overnight debe recibir el liberado DINÁMICO (0.35 + 0.05 de Nikkei = 0.90), no 0.85');
 
   const sumaB = biasB.factors.reduce((acc, f) => acc + f.weight, 0);
-  assert(Math.abs(sumaB - 1.05) < 1e-9, `la suma sin cointegración debería ser 1.05, dio ${sumaB}`);
+  assert(Math.abs(sumaB - 1.10) < 1e-9, `la suma sin cointegración debería ser 1.10, dio ${sumaB}`);
 
   console.log('Caso A (Nikkei+KOSPI cointegrados): suma pesos =', sumaA.toFixed(3), '| score =', biasA.score, `(${biasA.label})`);
   console.log('Caso B (ninguno cointegrado):       suma pesos =', sumaB.toFixed(3), '| score =', biasB.score, `(${biasB.label})`);
@@ -78,7 +81,7 @@ function run() {
   console.log('PESOS (caso A):');
   for (const f of biasA.factors) console.log(`  ${f.name.padEnd(18)} ${f.weight}`);
   console.log('');
-  console.log('OK: los pesos nuevos coinciden exactamente con la tabla de resultados de Fase 2 (solo Nikkei pasa Bonferroni; el peso liberado va completo a Caja overnight = 0.85 en modo dinámico).');
+  console.log('OK: los pesos nuevos coinciden exactamente con la tabla de resultados de Fase 2 (solo Nikkei pasa Bonferroni; el peso liberado dinámico va completo a Caja overnight).');
 }
 
 run();

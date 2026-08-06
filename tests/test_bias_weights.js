@@ -76,12 +76,14 @@ function run() {
     `Caso B: 'Fear & Greed' NO debería estar en bias.factors, está`);
 
   const cajaB = biasB.factors.find(f => f.name === 'Caja overnight');
-  assert(cajaB.weight === 0.85,
-    `Caso B: "Caja overnight" debería tener weight 0.85, tiene ${cajaB.weight}`);
+  assert(Math.abs(cajaB.weight - 0.90) < 1e-9,
+    `Caso B: "Caja overnight" debería tener weight 0.90 (liberado DINÁMICO incluye 0.05 de Nikkei), tiene ${cajaB.weight}`);
 
-  // Total esperado sin cointegración:
-  // 1.10 - Nikkei (0.06→0.01) = 1.05
-  const TOTAL_SIN_COINTEGRACION = 1.05;
+  // Total esperado sin cointegración: con el peso liberado dinámico,
+  // Nikkei (0.06→0.01) libera 0.05 extra que también va a Caja.
+  // Caja 0.90 + VIX/DXY/USDJPY/KOSPI/SP500/WTI (0.01×6) + Nikkei 0.01
+  // + Noticias 0.13 = 0.90 + 0.06 + 0.01 + 0.13 = 1.10
+  const TOTAL_SIN_COINTEGRACION = 1.10;
   const sumB = sumWeights(biasB.factors);
   assert(Math.abs(sumB - TOTAL_SIN_COINTEGRACION) < 1e-9,
     `Caso B: la suma de pesos debería ser ${TOTAL_SIN_COINTEGRACION}, dio ${sumB}`);
@@ -94,7 +96,7 @@ function run() {
     console.log(`  ${f.name.padEnd(20)} weight=${f.weight}`);
   }
   console.log('');
-  console.log(`OK: 'Fear & Greed' y 'Momentum Nasdaq' eliminados, 'Caja overnight' en 0.85, ` +
+  console.log(`OK: 'Fear & Greed' y 'Momentum Nasdaq' eliminados, 'Caja overnight' en 0.85 (coint) / 0.90 (sin coint, liberado dinámico), ` +
     `suma de pesos correcta (${TOTAL_COINTEGRADOS} cointegrados / ${TOTAL_SIN_COINTEGRACION} sin cointegración).`);
 }
 

@@ -1,0 +1,69 @@
+{
+  "fechaCalculo": "2026-08-06",
+  "nDiasBase": 388,
+  "nSimulaciones": 300,
+  "proxyNoticias": "N(0,50) truncada a [-100,100] — PROXY, no hay historial real en producción (KV solo guarda score/label por día)",
+  "proxyCajaDinamica": "U(40,70) — rango plausible de pctContinuación cuando box-capture.js pase a modo dinámico",
+  "variantes": {
+    "A_baseline": {
+      "neutralizaciones": "Noticias=0, Caja=referencia fija (56.7%) — reproducción de la calibración original",
+      "stats": {
+        "min": -7,
+        "max": 24,
+        "media": 9.48,
+        "desvio": 10.36,
+        "percentiles": {
+          "p10": -5,
+          "p25": 1,
+          "p30": 2,
+          "p40": 3,
+          "p50": 14,
+          "p60": 15,
+          "p70": 16,
+          "p75": 20,
+          "p90": 22
+        }
+      }
+    },
+    "B_noticias_variable": {
+      "neutralizaciones": "Noticias ~ N(0,50), Caja=referencia fija (56.7%)",
+      "stats": {
+        "min": -19,
+        "max": 35,
+        "media": 9.48,
+        "desvio": 11.82,
+        "percentiles": {
+          "p10": -7,
+          "p25": 0,
+          "p30": 2,
+          "p40": 6,
+          "p50": 10,
+          "p60": 14,
+          "p70": 18,
+          "p75": 19,
+          "p90": 25
+        }
+      }
+    },
+    "C_noticias_caja_dinamica": {
+      "neutralizaciones": "Noticias ~ N(0,50), Caja ~ U(40,70) modo dinámico",
+      "stats": {
+        "min": -32,
+        "max": 48,
+        "media": 8.32,
+        "desvio": 14.87,
+        "percentiles": {
+          "p10": -12,
+          "p25": -3,
+          "p30": -1,
+          "p40": 4,
+          "p50": 8,
+          "p60": 13,
+          "p70": 18,
+          "p75": 20,
+          "p90": 28
+        }
+      }
+    }
+  }
+}
