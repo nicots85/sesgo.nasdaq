@@ -11,3 +11,4 @@ requirements.txt
 reporte_backtest.json
 README.md
 .vercel
+.env*.local
