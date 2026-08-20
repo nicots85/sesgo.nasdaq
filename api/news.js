@@ -1,4 +1,4 @@
-const { analyzeNews } = require('../lib/deepseek');
+const { analyzeNews } = require('../lib/groq');
 const { fetchRSS } = require('../lib/rss');
 
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
