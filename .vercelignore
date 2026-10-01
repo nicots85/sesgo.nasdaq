@@ -1,0 +1,9 @@
+# Nunca subir claves ni archivos pesados/temporales a Vercel
+.env
+.env.*
+server.log
+data_raw
+data_raw_test
+"index old.html"
+scratch_sym.py
+scratch_sym2.py

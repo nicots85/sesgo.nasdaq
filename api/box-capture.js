@@ -123,8 +123,11 @@ async function captureToday() {
     return { skipped: `ya había un registro para ${today.date}` };
   }
 
-  history.overnight = [...history.overnight, today.overnight].slice(-MAX_HISTORY_DAYS);
-  history.ib = [...history.ib, today.ib].slice(-MAX_HISTORY_DAYS);
+  // IMPORTANTE: guardar la fecha en cada registro. Sin 'date' el chequeo de
+  // duplicados (arriba) nunca coincide y sweepConfirmation no puede cruzar
+  // la caja overnight con la IB del mismo día.
+  history.overnight = [...history.overnight, { date: today.date, ...today.overnight }].slice(-MAX_HISTORY_DAYS);
+  history.ib = [...history.ib, { date: today.date, ...today.ib }].slice(-MAX_HISTORY_DAYS);
 
   await saveBoxHistory(history);
 

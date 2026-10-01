@@ -14,36 +14,64 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, timeout]);
 }
 
+const YAHOO_HOSTS = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'];
+const YAHOO_BUDGET_MS = 8000; // tope total por activo (Vercel corta cerca de 10 s)
+
+// Último resultado bueno por activo (vive mientras la función esté "caliente").
+// Si Yahoo falla justo ahora, se usa el último dato bueno marcado como _stale
+// en vez de dejar el factor vacío.
+const lastGood = new Map();
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 async function fetchYahooChart(symbol, range = '1d', interval = '1m') {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
-  try {
+  const deadline = Date.now() + YAHOO_BUDGET_MS;
+  const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
+  // Hasta 4 intentos alternando servidor; reintenta ante error de red, 429 o 5xx.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const left = deadline - Date.now();
+    if (left < 1000) break;
+    const host = YAHOO_HOSTS[attempt % YAHOO_HOSTS.length];
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000);
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: ctrl.signal
-    });
-    clearTimeout(timer);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data?.chart?.result?.[0] || null;
-  } catch (e) {
-    return null;
+    const timer = setTimeout(() => ctrl.abort(), Math.min(4000, left));
+    try {
+      const res = await fetch(`https://${host}${path}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: ctrl.signal
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        const result = data?.chart?.result?.[0] || null;
+        if (result) return result;
+      } else if (res.status !== 429 && res.status < 500) {
+        return null; // 4xx real (ej. símbolo inexistente): no tiene sentido reintentar
+      }
+    } catch (e) {
+      clearTimeout(timer);
+    }
+    await sleep(300 * (attempt + 1));
   }
+  return null;
 }
 
 async function fetchQuote(symbol) {
   const chart = await fetchYahooChart(symbol, '1d', '1m');
-  if (!chart || !chart.meta) return null;
+  if (!chart || !chart.meta) {
+    const prev = lastGood.get(symbol);
+    return prev ? { ...prev, _stale: true } : null;
+  }
   const { meta } = chart;
   const price = meta.regularMarketPrice;
   const prev = meta.previousClose || meta.chartPreviousClose;
-  return {
+  const quote = {
     price,
     change: prev ? ((price - prev) / prev) * 100 : null,
     previousClose: prev,
     name: meta.shortName || meta.longName || symbol
   };
+  if (price != null) lastGood.set(symbol, quote);
+  return quote;
 }
 
 async function fetchHistorical(symbol, days = 252) {
