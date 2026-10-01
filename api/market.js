@@ -122,4 +122,21 @@ async function fetchMarketData() {
   return results;
 }
 
-module.exports = { fetchMarketData, fetchHistorical, fetchQuote, SYMBOLS };
+async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  try {
+    const data = await fetchMarketData();
+    res.setHeader('Content-Type', 'application/json');
+    res.statusCode = 200;
+    res.end(JSON.stringify(data));
+  } catch (e) {
+    res.statusCode = 500;
+    res.end(JSON.stringify({ error: e.message }));
+  }
+}
+
+module.exports = handler;
+module.exports.fetchMarketData = fetchMarketData;
+module.exports.fetchHistorical = fetchHistorical;
+module.exports.fetchQuote = fetchQuote;
+module.exports.SYMBOLS = SYMBOLS;

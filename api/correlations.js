@@ -77,4 +77,24 @@ function calculateCorrelations(pricesMap) {
   return results;
 }
 
-module.exports = { calculateCorrelations, PAIRS };
+async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  try {
+    const { fetchHistorical, SYMBOLS } = require('./market');
+    const entries = await Promise.all(Object.entries(SYMBOLS).map(async ([name, sym]) => {
+      const hist = await fetchHistorical(sym);
+      return [name, hist.map(d => d.close)];
+    }));
+    const pricesMap = Object.fromEntries(entries);
+    res.setHeader('Content-Type', 'application/json');
+    res.statusCode = 200;
+    res.end(JSON.stringify(calculateCorrelations(pricesMap)));
+  } catch (e) {
+    res.statusCode = 500;
+    res.end(JSON.stringify({ error: e.message }));
+  }
+}
+
+module.exports = handler;
+module.exports.calculateCorrelations = calculateCorrelations;
+module.exports.PAIRS = PAIRS;
