@@ -184,7 +184,52 @@
     .quick-metric-value { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
     .quick-metric-change { font-size: 0.78rem; margin-top: 2px; font-weight: 600; }
 
-    /* ============ TOGGLE — todo lo demás vive acá adentro ============ */
+/* ============ RÉGIMEN DE MERCADO ============ */
+    .regimen-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 10px;
+    }
+    @media (min-width: 580px) {
+      .regimen-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+    .regimen-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 10px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 95px;
+    }
+    .regimen-tf {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .regimen-label {
+      font-size: 0.88rem;
+      font-weight: 800;
+      line-height: 1.25;
+      margin: 4px 0;
+    }
+    .regimen-label.alcista { color: var(--green); }
+    .regimen-label.bajista { color: var(--red); }
+    .regimen-label.rango { color: var(--text-muted); }
+    .regimen-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+        /* ============ TOGGLE — todo lo demás vive acá adentro ============ */
     .detail-toggle {
       width: 100%;
       padding: 14px;
@@ -405,7 +450,34 @@
         <div id="pushTableContainer"></div>
       </div>
 
-      <!-- Todo lo demás, oculto por defecto -->
+      <!-- Régimen de mercado: 4h, 1h, 15m, 5m -->
+      <div class="card" id="regimenCard">
+        <div class="card-title">Régimen de mercado</div>
+        <div class="regimen-grid" id="regimenGrid">
+          <div class="regimen-card" id="regimenCard4h">
+            <div class="regimen-tf">4h (HMM)</div>
+            <div class="regimen-label rango">Cargando...</div>
+            <div class="regimen-sub">--</div>
+          </div>
+          <div class="regimen-card" id="regimenCard1h">
+            <div class="regimen-tf">1h (HMM)</div>
+            <div class="regimen-label rango">Cargando...</div>
+            <div class="regimen-sub">--</div>
+          </div>
+          <div class="regimen-card" id="regimenCard15m">
+            <div class="regimen-tf">15m (ADX)</div>
+            <div class="regimen-label rango">Cargando...</div>
+            <div class="regimen-sub">--</div>
+          </div>
+          <div class="regimen-card" id="regimenCard5m">
+            <div class="regimen-tf">5m (ADX)</div>
+            <div class="regimen-label rango">Cargando...</div>
+            <div class="regimen-sub">--</div>
+          </div>
+        </div>
+      </div>
+
+            <!-- Todo lo demás, oculto por defecto -->
       <button class="detail-toggle" id="detailToggle">
         <span>Ver análisis completo</span>
         <span class="arrow">▾</span>
@@ -982,7 +1054,91 @@
       box.style.display = 'block';
     }
 
-    // ---------- Fetch principal ----------
+    // ---------- Régimen de mercado (4h, 1h, 15m, 5m) ----------
+    function getRegimenColorClass(label) {
+      if (!label) return 'rango';
+      const upper = label.toUpperCase();
+      if (upper.includes('ALCISTA')) return 'alcista';
+      if (upper.includes('BAJISTA')) return 'bajista';
+      return 'rango';
+    }
+
+    function renderRegimenCard(cardId, tfName, data, type) {
+      const card = document.getElementById(cardId);
+      if (!card) return;
+
+      if (!data || data.regimen === 'SIN_DATOS') {
+        const estado = !data ? 'No disponible' : 'Sin datos';
+        card.innerHTML = `
+          <div class="regimen-tf">${tfName}</div>
+          <div class="regimen-label rango">${estado}</div>
+          <div class="regimen-sub">--</div>
+        `;
+        return;
+      }
+
+      const label = data.etiqueta || data.regimen || '--';
+      const colorCls = getRegimenColorClass(label);
+
+      let subText = '--';
+      if (type === 'hmm') {
+        const prob = data.probabilidad != null ? Math.round(data.probabilidad * 100) : null;
+        subText = prob != null ? `probabilidad: ${prob}%` : '--';
+      } else if (type === 'adx') {
+        const adx = data.adx_valor != null ? data.adx_valor : null;
+        subText = adx != null ? `ADX: ${adx}` : '--';
+      }
+
+      card.innerHTML = `
+        <div class="regimen-tf">${tfName}</div>
+        <div class="regimen-label ${colorCls}">${label}</div>
+        <div class="regimen-sub">${subText}</div>
+      `;
+    }
+
+    function setRegimenLoading() {
+      const cards = [
+        { id: 'regimenCard4h', name: '4h (HMM)' },
+        { id: 'regimenCard1h', name: '1h (HMM)' },
+        { id: 'regimenCard15m', name: '15m (ADX)' },
+        { id: 'regimenCard5m', name: '5m (ADX)' },
+      ];
+      cards.forEach(c => {
+        const el = document.getElementById(c.id);
+        if (el) {
+          el.innerHTML = `
+            <div class="regimen-tf">${c.name}</div>
+            <div class="regimen-label rango">Cargando...</div>
+            <div class="regimen-sub">--</div>
+          `;
+        }
+      });
+    }
+
+    async function fetchRegimenData() {
+      const [resAdx, resHmm] = await Promise.allSettled([
+        fetch(`${API_BASE}/api/regimen`).then(r => (r.ok ? r.json() : Promise.reject(new Error(r.status)))),
+        fetch(`${API_BASE}/api/regimen_hmm`).then(r => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+      ]);
+
+      if (resHmm.status === 'fulfilled' && resHmm.value) {
+        renderRegimenCard('regimenCard4h', '4h (HMM)', resHmm.value['4h'], 'hmm');
+        renderRegimenCard('regimenCard1h', '1h (HMM)', resHmm.value['1h'], 'hmm');
+      } else {
+        renderRegimenCard('regimenCard4h', '4h (HMM)', null, 'hmm');
+        renderRegimenCard('regimenCard1h', '1h (HMM)', null, 'hmm');
+      }
+
+      if (resAdx.status === 'fulfilled' && resAdx.value) {
+        renderRegimenCard('regimenCard15m', '15m (ADX)', resAdx.value['15m'], 'adx');
+        renderRegimenCard('regimenCard5m', '5m (ADX)', resAdx.value['5m'], 'adx');
+      } else {
+        renderRegimenCard('regimenCard15m', '15m (ADX)', null, 'adx');
+        renderRegimenCard('regimenCard5m', '5m (ADX)', null, 'adx');
+      }
+    }
+
+        // ---------- Fetch principal ----------
     async function fetchData() {
       try {
         const res = await fetch(`${API_BASE}/api/bias`);
@@ -1015,6 +1171,18 @@
 
     fetchData();
     setInterval(fetchData, 300000);
+
+    // Régimen de mercado: carga paralela independiente + auto-refresh cada 5 minutos.
+    // Igual que fetchTradeNews: envuelto en try/catch para entornos sin fetch global (tests jsdom).
+    try {
+      setRegimenLoading();
+      if (typeof fetch === 'function') {
+        fetchRegimenData();
+        setInterval(fetchRegimenData, 300000);
+      }
+    } catch (e) {
+      console.warn('regimen init:', e);
+    }
 
     // Noticias para el trade: se consultan AL CARGAR la página (dato fresco de Groq).
     // Sin auto-refresh en background — cada recarga de página re-consulta.
