@@ -395,7 +395,14 @@ async function loadHistoricalPrices() {
   if (kv) {
     try {
       const data = await kv.get('historical:prices');
-      if (data) return typeof data === 'string' ? JSON.parse(data) : data;
+      if (data) {
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+        // Guardamos { lastDate, prices } (mismo formato que data/historical.json);
+        // sin desenvolver aquí, ensureHistoricalData ve un objeto sin longitudes
+        // y re-siembraba desde Yahoo en CADA llamada.
+        if (parsed && parsed.prices && typeof parsed.prices === 'object') return parsed.prices;
+        return parsed;
+      }
     } catch (e) { console.warn('KV read failed:', e.message); }
   }
   // 2. Fallback filesystem (desarrollo local)
